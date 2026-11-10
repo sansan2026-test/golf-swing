@@ -10,7 +10,7 @@ const store = {
 };
 
 const S = {
-  viewPref: 'auto', hand: store.get('hand', 'R'), heightCm: store.get('height', 170),
+  viewPref: 'auto', hand: 'R', heightCm: 170, entry: null,
   frames: [], n: 0, dt: 1 / 30, W: 0, H: 0, vw: 0, vh: 0,
   view: null, autoView: null, ph: null, checks: [], score: 0,
   skel: true, path: true, ref: true, rate: 0.25, analyzed: false, fileName: '',
@@ -102,11 +102,8 @@ function segInit(id, cur, onChange) {
   return paint;
 }
 segInit('segView', 'auto', (v) => { S.viewPref = v; if (S.analyzed) { S.view = v === 'auto' ? S.autoView : v; paintView2(S.view); evaluate(); } });
-segInit('segHand', S.hand, (v) => { S.hand = v; store.set('hand', v); if (S.analyzed) evaluate(); });
 const paintView2 = segInit('segView2', '', (v) => { S.view = v; evaluate(); });
 segInit('segSpeed', '0.25', (v) => { S.rate = +v; video.playbackRate = S.rate; });
-$('#height').value = S.heightCm;
-$('#height').addEventListener('change', (e) => { const v = +e.target.value; if (v >= 120 && v <= 220) { S.heightCm = v; store.set('height', v); if (S.analyzed) evaluate(); } });
 
 function toggle(id, key) {
   $(id).addEventListener('click', () => { S[key] = !S[key]; $(id).classList.toggle('on', S[key]); draw(); });
@@ -117,7 +114,7 @@ toggle('#tSkel', 'skel'); toggle('#tPath', 'path'); toggle('#tRef', 'ref');
 $('#file').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
-  S.analyzed = false; S.fileName = f.name;
+  S.analyzed = false; S.fileName = f.name; S.entry = null;
   $('#results').classList.add('hidden');
   $('#playerBox').classList.add('hidden');
   $('#analyzeBox').classList.remove('hidden');
@@ -640,7 +637,7 @@ function evaluate(saveHist) {
   const scored = C.filter((c) => c.status !== 'na');
   S.score = Math.round(scored.reduce((s, c) => s + (c.status === 'good' ? 100 : c.status === 'warn' ? 60 : 25), 0) / (scored.length || 1));
   render(back, down, ratio);
-  if (saveHist) saveHistory(ratio);
+  recordEntry(back, down, ratio);
 }
 
 // ---------- 結果の表示 ----------
@@ -656,7 +653,8 @@ function render(back, down, ratio) {
     <dt>撮影角度</dt><dd>${S.view === 'fo' ? '正面' : '後方'}${S.viewPref === 'auto' ? '（自動判定）' : ''}</dd>
     <dt>テンポ</dt><dd>約 ${ratio.toFixed(1)} : 1</dd>
     <dt>スイング時間</dt><dd>${(back + down).toFixed(2)}秒（トップまで ${back.toFixed(2)}秒）</dd>
-    <dt>判定</dt><dd>良い ${nG}・注意 ${nW}・要改善 ${nB}</dd>`;
+    <dt>判定</dt><dd>良い ${nG}・注意 ${nW}・要改善 ${nB}</dd>
+    <dt>前回比</dt><dd id="vsPrev">－</dd>`;
 
   const order = PHASES.map((p) => p.key);
   const issues = S.checks.filter((c) => c.status === 'bad' || c.status === 'warn')
@@ -812,34 +810,281 @@ const step = async (d) => { video.pause(); await seek(Math.max(0, Math.min(video
 $('#prevBtn').addEventListener('click', () => step(-1));
 $('#nextBtn').addEventListener('click', () => step(1));
 
-// ---------- 記録 ----------
-function saveHistory(ratio) {
-  const h = store.get('history', []);
-  const issues = S.checks.filter((c) => c.status === 'bad').map((c) => c.name);
-  h.unshift({ at: new Date().toISOString(), file: S.fileName, view: S.view, score: S.score, tempo: +ratio.toFixed(1), issues: issues.slice(0, 3) });
-  store.set('history', h.slice(0, 50));
-  renderHistory();
+// ---------- プレーヤーと記録 ----------
+// 記録はプレーヤーごとに「swing.hist.<プレーヤーID>」としてブラウザ内に保存する
+const RANK = { good: 2, warn: 1, bad: 0 };
+const ST_JA = { good: '良い', warn: '注意', bad: '要改善' };
+const pad = (n) => String(n).padStart(2, '0');
+const fmtDate = (iso) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtDay = (iso) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
+const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const phaseName = (k) => (PHASES.find((p) => p.key === k) || { name: '' }).name;
+
+function profiles() {
+  let ps = store.get('profiles', null);
+  if (!ps || !ps.length) {
+    // 初回：以前の設定と記録を「わたし」に引き継ぐ
+    ps = [{ id: newId('p'), name: 'わたし', hand: store.get('hand', 'R'), height: store.get('height', 170) }];
+    store.set('profiles', ps);
+    store.set('cur', ps[0].id);
+    const old = store.get('history', null);
+    if (old && old.length) store.set('hist.' + ps[0].id, old.map((r) => ({ id: newId('h'), checks: [], ...r })));
+  }
+  return ps;
 }
+const curProfile = () => { const ps = profiles(); return ps.find((p) => p.id === store.get('cur', '')) || ps[0]; };
+const hist = (pid) => store.get('hist.' + pid, []);
+const setHist = (pid, h) => store.set('hist.' + pid, h);
+const sorted = (h) => h.slice().sort((a, b) => (a.at < b.at ? -1 : 1));
+
+function applyProfile() {
+  const p = curProfile();
+  S.hand = p.hand; S.heightCm = p.height;
+  $('#playerSel').innerHTML = profiles().map((x) => `<option value="${x.id}"${x.id === p.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+  $('#playerInfo').textContent = `${p.hand === 'R' ? '右打ち' : '左打ち'}・身長${p.height}cm・記録${hist(p.id).length}件`;
+}
+
+// 表示中の解析結果を、切り替え先のプレーヤーの記録に付け替える
+function switchTo(pid) {
+  const from = S.entry && !S.entry.discarded ? S.entry.pid : null;
+  store.set('cur', pid);
+  if (S.analyzed && from && from !== pid) {
+    const h = hist(from), i = h.findIndex((r) => r.id === S.entry.id);
+    if (i >= 0) {
+      const [r] = h.splice(i, 1); setHist(from, h);
+      const h2 = hist(pid); h2.unshift(r); setHist(pid, h2);
+      S.entry.pid = pid;
+    }
+  }
+  applyProfile();
+  if (S.analyzed) evaluate(); else renderGrowth();
+}
+$('#playerSel').addEventListener('change', (e) => { closeForm(); gView = null; switchTo(e.target.value); });
+
+let formMode = null, formHand = 'R';
+const paintHand = segInit('segHand', 'R', (v) => { formHand = v; });
+function openForm(mode) {
+  formMode = mode;
+  const p = curProfile();
+  $('#pfName').value = mode === 'edit' ? p.name : '';
+  formHand = mode === 'edit' ? p.hand : 'R'; paintHand(formHand);
+  $('#pfHeight').value = mode === 'edit' ? p.height : 160;
+  $('#pfDelete').classList.toggle('hidden', mode !== 'edit' || profiles().length < 2);
+  $('#pfConfirm').innerHTML = '';
+  $('#playerForm').classList.remove('hidden');
+}
+function closeForm() { formMode = null; $('#playerForm').classList.add('hidden'); $('#pfConfirm').innerHTML = ''; }
+$('#playerAddBtn').addEventListener('click', () => openForm('add'));
+$('#playerEditBtn').addEventListener('click', () => openForm('edit'));
+$('#pfCancel').addEventListener('click', closeForm);
+$('#pfSave').addEventListener('click', () => {
+  const name = $('#pfName').value.trim() || 'プレーヤー';
+  let h = +$('#pfHeight').value; if (!(h >= 120 && h <= 220)) h = 170;
+  const ps = profiles();
+  const mode = formMode;
+  closeForm();
+  if (mode === 'add') {
+    const p = { id: newId('p'), name, hand: formHand, height: h };
+    ps.push(p); store.set('profiles', ps); gView = null;
+    switchTo(p.id);
+  } else {
+    Object.assign(ps.find((x) => x.id === curProfile().id), { name, hand: formHand, height: h });
+    store.set('profiles', ps);
+    applyProfile();
+    if (S.analyzed) evaluate(); else renderGrowth();
+  }
+});
+$('#pfDelete').addEventListener('click', () => {
+  const p = curProfile(), n = hist(p.id).length;
+  $('#pfConfirm').innerHTML = `<div id="confirmBox">「${esc(p.name)}」と、その記録${n}件を削除しますか？（元に戻せません）
+    <div class="row" style="margin-top:6px"><button class="btn small" id="pfDelYes">削除する</button><button class="btn small" id="pfDelNo">やめる</button></div></div>`;
+  $('#pfDelYes').addEventListener('click', () => {
+    const ps = profiles().filter((x) => x.id !== p.id);
+    store.set('profiles', ps);
+    try { localStorage.removeItem('swing.hist.' + p.id); } catch { /* 無視 */ }
+    if (S.entry && S.entry.pid === p.id) S.entry = { discarded: true };
+    store.set('cur', ps[0].id); gView = null;
+    closeForm(); applyProfile();
+    if (S.analyzed) evaluate(); else renderGrowth();
+  });
+  $('#pfDelNo').addEventListener('click', () => { $('#pfConfirm').innerHTML = ''; });
+});
+
+// 解析結果を記録する（同じ動画で角度などを切り替えた時は、新しく増やさず上書き）
+function recordEntry(back, down, ratio) {
+  const checks = S.checks.filter((c) => c.status !== 'na').map((c) => ({ k: c.phase + '|' + c.name, phase: c.phase, name: c.name, st: c.status, v: c.value }));
+  const data = { file: S.fileName, view: S.view, score: S.score, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
+  if (!(S.entry && S.entry.discarded)) {
+    const pid = S.entry ? S.entry.pid : curProfile().id;
+    const h = hist(pid);
+    const i = S.entry ? h.findIndex((r) => r.id === S.entry.id) : -1;
+    if (i >= 0) h[i] = { ...h[i], ...data };
+    else { const id = newId('h'); h.unshift({ id, at: new Date().toISOString(), ...data }); S.entry = { pid, id }; }
+    setHist(pid, h.slice(0, 300));
+    // 総合結果の「前回比」
+    const list = sorted(hist(pid)).filter((r) => r.view === S.view);
+    const idx = list.findIndex((r) => r.id === S.entry.id);
+    const vs = $('#vsPrev');
+    if (vs) {
+      if (idx > 0) { const d = S.score - list[idx - 1].score; vs.textContent = `${d > 0 ? '+' : ''}${d}点（前回 ${list[idx - 1].score}点）`; }
+      else vs.textContent = `初めての${S.view === 'fo' ? '正面' : '後方'}の記録`;
+    }
+  }
+  gView = S.view;
+  applyProfile();
+  renderGrowth();
+}
+
+// ---------- 成長の記録 ----------
+let gView = null;
+const paintGView = segInit('segGView', '', (v) => { gView = v; renderGrowth(); });
+
+function renderGrowth() {
+  const p = curProfile();
+  $('#growthTitle').textContent = `📈 成長の記録（${p.name}）`;
+  const all = sorted(hist(p.id));
+  renderHistory(p.id, all);
+  if (!gView) gView = all.length ? all[all.length - 1].view : 'fo';
+  paintGView(gView);
+  const list = all.filter((r) => r.view === gView);
+  const box = $('#growth');
+  const vName = gView === 'fo' ? '正面' : '後方';
+  if (!list.length) { box.innerHTML = `<p class="note">${vName}から撮った記録はまだありません。</p>`; return; }
+  let html = chart(list.slice(-20));
+  if (list.length < 2) { box.innerHTML = html + `<p class="note">${vName}からもう1回以上解析すると、前回との比較が表示されます。</p>`; return; }
+  const last = list[list.length - 1], prev = list[list.length - 2];
+  html += `<div class="gsec"><h3>前回（${fmtDate(prev.at)}）と比べて</h3>${compare(prev, last)}</div>`;
+  if (list.length >= 3) {
+    html += `<div class="gsec"><h3>はじめの記録（${fmtDate(list[0].at)}）と比べて</h3>${compare(list[0], last)}</div>`;
+    html += habits(list);
+  }
+  box.innerHTML = html;
+}
+
+// スコアの推移グラフ
+function chart(list) {
+  const W = 600, H = 190, L = 34, R = 14, T = 16, B = 30;
+  const x = (i) => (list.length === 1 ? (L + W - R) / 2 : L + (W - L - R) * i / (list.length - 1));
+  const y = (v) => T + (H - T - B) * (1 - v / 100);
+  let g = '';
+  for (const v of [25, 50, 75, 100]) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--sub)">${v}</text>`;
+  const pts = list.map((r, i) => `${x(i)},${y(r.score)}`).join(' ');
+  const every = Math.ceil(list.length / 8);
+  const dots = list.map((r, i) => `<circle cx="${x(i)}" cy="${y(r.score)}" r="4" fill="var(--brand)"/>
+    <text x="${x(i)}" y="${y(r.score) - 8}" text-anchor="middle" font-size="11" fill="var(--ink)">${r.score}</text>
+    ${i % every === 0 || i === list.length - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--sub)">${fmtDay(r.at)}</text>` : ''}`).join('');
+  return `<svg class="gchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="スコアの推移">${g}
+    <polyline points="${pts}" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round"/>${dots}</svg>
+    <p class="note" style="margin:0">総合スコアの推移（直近${list.length}回）</p>`;
+}
+
+// 2つの記録を項目ごとに比べる
+function compare(a, b) {
+  const d = b.score - a.score;
+  let html = `<p style="margin:4px 0">総合スコア <b>${a.score} → ${b.score}</b>（${d > 0 ? '+' : ''}${d}点）・テンポ ${a.tempo}:1 → ${b.tempo}:1</p>`;
+  const map = new Map((a.checks || []).map((c) => [c.k, c]));
+  const ups = [], downs = [];
+  let same = 0;
+  for (const c of b.checks || []) {
+    const o = map.get(c.k);
+    if (!o) continue;
+    const diff = RANK[c.st] - RANK[o.st];
+    if (diff > 0) ups.push([o, c]); else if (diff < 0) downs.push([o, c]); else same++;
+  }
+  const row = (cls, ic, [o, c]) => `<div class="delta ${cls}"><span class="ic">${ic}</span><div><b>${esc(c.name)}</b>（${phaseName(c.phase)}）：${ST_JA[o.st]} → <b>${ST_JA[c.st]}</b>
+    <br><span class="note">前：${esc(o.v)}<br>今：${esc(c.v)}</span></div></div>`;
+  if (!ups.length && !downs.length) {
+    html += `<p class="note">判定が変わった項目はありません${same ? `（${same}項目が同じ判定）` : ''}。</p>`;
+  } else {
+    if (ups.length) html += `<p class="lbl" style="margin:8px 0 0;font-weight:700">よくなった項目（${ups.length}）</p>` + ups.map((x) => row('up', '▲', x)).join('');
+    if (downs.length) html += `<p class="lbl" style="margin:8px 0 0;font-weight:700">悪くなった項目（${downs.length}）</p>` + downs.map((x) => row('dn', '▼', x)).join('');
+    if (same) html += `<p class="note">ほか${same}項目は同じ判定です。</p>`;
+  }
+  return html;
+}
+
+// 直近3回の傾向：身についたこと／続いている課題
+function habits(list) {
+  const last3 = list.slice(-3), earlier = list.slice(0, -3);
+  const keys = (list[list.length - 1].checks || []).map((c) => c);
+  const stOf = (r, k) => { const c = (r.checks || []).find((x) => x.k === k); return c ? c.st : null; };
+  const mastered = [], ongoing = [];
+  for (const c of keys) {
+    const sts = last3.map((r) => stOf(r, c.k));
+    if (sts.some((s) => s == null)) continue;
+    if (sts.every((s) => s === 'good') && earlier.some((r) => { const s = stOf(r, c.k); return s && s !== 'good'; })) mastered.push(c);
+    if (sts.every((s) => s !== 'good')) ongoing.push(c);
+  }
+  ongoing.sort((a, b) => RANK[a.st] - RANK[b.st]);
+  let html = '';
+  if (mastered.length) html += `<div class="gsec"><h3>🏅 身についたこと（以前は課題 → 直近3回連続で「良い」）</h3>` + mastered.map((c) => `<div class="delta up"><span class="ic">✓</span><div><b>${esc(c.name)}</b>（${phaseName(c.phase)}）</div></div>`).join('') + '</div>';
+  if (ongoing.length) html += `<div class="gsec"><h3>🔁 続いている課題（直近3回連続で「注意」以下）</h3>` + ongoing.slice(0, 6).map((c) => `<div class="delta st"><span class="ic">・</span><div><b>${esc(c.name)}</b>（${phaseName(c.phase)}）：今回 ${ST_JA[c.st]}</div></div>`).join('') + '<p class="note">ここが今のあなたの「くせ」です。練習テーマとして優先しましょう。</p></div>';
+  return html;
+}
+
+// 記録の一覧（新しい順）
 let pendingDel = null;
-function renderHistory() {
-  const h = store.get('history', []);
+function renderHistory(pid, all) {
   const box = $('#history');
+  const h = all.slice().reverse();
   if (!h.length) { box.innerHTML = '<p class="note">まだ記録がありません。</p>'; return; }
-  box.innerHTML = h.map((r, i) => {
-    const d = new Date(r.at);
-    return `<div class="hist-item"><div><b>${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</b>
-      （${r.view === 'fo' ? '正面' : '後方'}）スコア <b>${r.score}</b>・テンポ ${r.tempo}:1
-      ${r.issues.length ? `<br><span class="note">要改善：${r.issues.map(esc).join('、')}</span>` : ''}</div>
-      <button class="btn small" data-del="${i}">削除</button></div>`;
-  }).join('') + (pendingDel != null ? `<div id="confirmBox">この記録を削除しますか？（元に戻せません）
+  box.innerHTML = h.map((r) => `<div class="hist-item"><div><b>${fmtDate(r.at)}</b>（${r.view === 'fo' ? '正面' : '後方'}）スコア <b>${r.score}</b>・テンポ ${r.tempo}:1
+      <br><span class="note">${esc(r.file || '')}</span></div>
+      <button class="btn small" data-del="${r.id}">削除</button></div>`).join('')
+    + (pendingDel ? `<div id="confirmBox">この記録を削除しますか？（元に戻せません）
       <div class="row" style="margin-top:6px"><button class="btn small" id="delYes">削除する</button><button class="btn small" id="delNo">やめる</button></div></div>` : '');
-  $$('#history [data-del]').forEach((b) => b.addEventListener('click', () => { pendingDel = +b.dataset.del; renderHistory(); }));
-  if (pendingDel != null) {
-    $('#delYes').addEventListener('click', () => { const x = store.get('history', []); x.splice(pendingDel, 1); store.set('history', x); pendingDel = null; renderHistory(); });
-    $('#delNo').addEventListener('click', () => { pendingDel = null; renderHistory(); });
+  $$('#history [data-del]').forEach((b) => b.addEventListener('click', () => { pendingDel = b.dataset.del; renderGrowth(); }));
+  if (pendingDel) {
+    $('#delYes').addEventListener('click', () => {
+      setHist(pid, hist(pid).filter((r) => r.id !== pendingDel));
+      if (S.entry && S.entry.id === pendingDel) S.entry = { discarded: true };
+      pendingDel = null; applyProfile(); renderGrowth();
+    });
+    $('#delNo').addEventListener('click', () => { pendingDel = null; renderGrowth(); });
   }
 }
-renderHistory();
+
+// ---------- バックアップ ----------
+$('#exportBtn').addEventListener('click', () => {
+  const ps = profiles();
+  const data = { app: 'golf-swing', ver: 1, exportedAt: new Date().toISOString(), profiles: ps, hist: Object.fromEntries(ps.map((p) => [p.id, hist(p.id)])) };
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const d = new Date();
+  a.href = URL.createObjectURL(blob);
+  a.download = `swing-records-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  $('#backupMsg').textContent = '書き出しました（ダウンロードフォルダ／iPhoneは「ファイル」アプリに保存されます）。';
+});
+$('#importFile').addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app !== 'golf-swing' || !Array.isArray(data.profiles)) throw new Error('このアプリの記録ファイルではありません');
+    const ps = profiles();
+    let addedP = 0, addedH = 0;
+    for (const p of data.profiles) {
+      if (!p || !p.id || !p.name) continue;
+      if (!ps.find((x) => x.id === p.id)) { ps.push({ id: String(p.id), name: String(p.name).slice(0, 12), hand: p.hand === 'L' ? 'L' : 'R', height: +p.height || 170 }); addedP++; }
+      const h = hist(p.id);
+      for (const r of (data.hist && data.hist[p.id]) || []) {
+        if (r && r.id && r.at && !h.find((x) => x.id === r.id)) { h.push(r); addedH++; }
+      }
+      setHist(p.id, h);
+    }
+    store.set('profiles', ps);
+    applyProfile(); renderGrowth();
+    $('#backupMsg').textContent = `読み込みました：プレーヤー${addedP}人・記録${addedH}件を追加（重複分は除外）。`;
+  } catch (err) {
+    $('#backupMsg').textContent = '読み込めませんでした：' + (err.message || err);
+  }
+});
+
+applyProfile();
+renderGrowth();
 
 // ---------- 用語集 ----------
 const GLOSS = [

@@ -90,6 +90,14 @@ details{margin-top:8px}
 .hidden{display:none !important}
 .gloss dt{font-weight:700;margin-top:8px}
 .gloss dd{margin:0 0 0 0;font-size:14px;color:var(--sub)}
+.sel,.txt{padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:15px;background:var(--card);color:var(--ink);font-family:inherit}
+.txt{width:200px}
+.gchart{width:100%;height:auto;display:block;margin:8px 0}
+.delta{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+.delta .ic{font-weight:800;width:1.2em;flex:0 0 auto}
+.up .ic{color:var(--good)} .dn .ic{color:var(--bad)} .st .ic{color:var(--sub)}
+.gsec{margin-top:12px}
+.gsec h3{font-size:15px}
 #confirmBox{margin-top:8px;padding:8px;border:1px solid var(--bad);border-radius:8px;font-size:14px}
 </style>
 </head>
@@ -97,6 +105,38 @@ details{margin-top:8px}
 <main>
   <h1>⛳ マイ・スイング解析</h1>
   <p class="lead">iPhoneで撮ったスイング動画から体の動き（骨格）をAIで読み取り、スイング軌道と動作ごとの改善ポイントを解説します。動画はこの端末の中だけで解析され、どこにも送信されません。</p>
+
+  <!-- 0. プレーヤー -->
+  <section class="card" id="playerCard">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">👤 プレーヤー</h2>
+      <div class="row">
+        <select id="playerSel" class="sel"></select>
+        <button class="btn small" id="playerEditBtn">編集</button>
+        <button class="btn small" id="playerAddBtn">＋追加</button>
+      </div>
+    </div>
+    <p class="note" id="playerInfo" style="margin:6px 0 0"></p>
+    <div id="playerForm" class="hidden">
+      <div class="field"><label class="t">名前（例：わたし、妻）</label><input type="text" id="pfName" maxlength="12" class="txt"></div>
+      <div class="row">
+        <div class="field">
+          <label class="t">利き打ち</label>
+          <div class="seg" id="segHand"><button data-v="R">右打ち</button><button data-v="L">左打ち</button></div>
+        </div>
+        <div class="field">
+          <label class="t">身長（cm）※動きの大きさを「約○cm」で表示するため</label>
+          <input type="number" id="pfHeight" min="120" max="220" value="170">
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary small" id="pfSave">保存</button>
+        <button class="btn small" id="pfCancel">キャンセル</button>
+        <button class="btn small" id="pfDelete" style="margin-left:auto;color:var(--bad)">このプレーヤーを削除</button>
+      </div>
+      <div id="pfConfirm"></div>
+    </div>
+  </section>
 
   <!-- 1. 入力 -->
   <section class="card" id="inputCard">
@@ -110,19 +150,6 @@ details{margin-top:8px}
         <button data-v="auto" class="on">自動判定</button>
         <button data-v="fo">正面</button>
         <button data-v="dtl">後方</button>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label class="t">利き打ち</label>
-        <div class="seg" id="segHand">
-          <button data-v="R" class="on">右打ち</button>
-          <button data-v="L">左打ち</button>
-        </div>
-      </div>
-      <div class="field">
-        <label class="t">身長（cm）※動きの大きさを「約○cm」で表示するため</label>
-        <input type="number" id="height" min="120" max="220" value="170">
       </div>
     </div>
     <details>
@@ -214,10 +241,24 @@ details{margin-top:8px}
     </section>
   </div>
 
-  <section class="card">
-    <h2>📈 これまでの記録</h2>
-    <p class="note">この端末のブラウザ内にだけ保存されます（他の端末やClaudeには送られません）。</p>
-    <div id="history"><p class="note">まだ記録がありません。</p></div>
+  <section class="card" id="growthCard">
+    <h2 id="growthTitle">📈 成長の記録</h2>
+    <p class="note">解析するたびに自動で記録され、同じ角度（正面どうし・後方どうし）で比べます。記録はこの端末のブラウザ内にだけ保存されます（GitHubやClaudeには送られません）。</p>
+    <div class="seg" id="segGView"><button data-v="fo">正面</button><button data-v="dtl">後方</button></div>
+    <div id="growth"></div>
+    <details>
+      <summary>記録の一覧</summary>
+      <div id="history"></div>
+    </details>
+    <details>
+      <summary>バックアップ（記録の書き出し・読み込み）</summary>
+      <p class="note">記録はこの端末のこのブラウザにだけ保存されています。ブラウザの履歴を消すと記録も消えるので、ときどき書き出しておくと安心です。書き出したファイルを別の端末で読み込めば記録を移せます。</p>
+      <div class="row">
+        <button class="btn small" id="exportBtn">記録を書き出す</button>
+        <label class="btn small" style="position:relative;overflow:hidden">記録を読み込む<input type="file" id="importFile" accept=".json,application/json" style="position:absolute;inset:0;opacity:0"></label>
+      </div>
+      <div id="backupMsg" class="note"></div>
+    </details>
   </section>
 
   <section class="card">
