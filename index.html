@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="スイング解析">
+<title>マイ・スイング解析</title>
+<style>
+:root{
+  --bg:#f4f6f3; --card:#ffffff; --ink:#1d2420; --sub:#5b665f; --line:#dfe5e0;
+  --brand:#1f7a4d; --brand2:#e7f3ec;
+  --good:#1f8a4c; --goodbg:#e5f4ea; --warn:#b7791f; --warnbg:#fbf1dc; --bad:#c2402f; --badbg:#fbe5e1;
+  --back:#2f8cff; --down:#ff5a36; --follow:#9aa3a0;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#121614; --card:#1b211e; --ink:#e8eeea; --sub:#9daaa2; --line:#2c3530;
+    --brand:#4cc38a; --brand2:#1d3328; --goodbg:#183325; --warnbg:#362c16; --badbg:#3a1d18;
+    --good:#55cf8c; --warn:#e3a94a; --bad:#ff7a66; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
+  font-size:16px;line-height:1.6;-webkit-text-size-adjust:100%}
+main{max-width:760px;margin:0 auto;padding:12px 14px 60px}
+h1{font-size:22px;margin:6px 0 2px}
+h2{font-size:18px;margin:0 0 8px}
+h3{font-size:16px;margin:0 0 6px}
+.lead{color:var(--sub);font-size:14px;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;
+  padding:9px 14px;font-size:15px;font-family:inherit;cursor:pointer}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.btn.small{padding:6px 10px;font-size:13px}
+.btn.on{background:var(--brand2);border-color:var(--brand);color:var(--brand);font-weight:600}
+.btn:disabled{opacity:.5}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.field{margin:10px 0}
+.field label.t{display:block;font-size:13px;color:var(--sub);margin-bottom:4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{appearance:none;border:0;background:transparent;color:var(--ink);padding:8px 12px;font-size:14px;font-family:inherit}
+.seg button.on{background:var(--brand);color:#fff}
+input[type=number]{width:90px;padding:7px;border:1px solid var(--line);border-radius:8px;font-size:15px;background:var(--card);color:var(--ink)}
+.filebtn{position:relative;display:block;text-align:center;padding:16px;border:2px dashed var(--brand);border-radius:14px;
+  color:var(--brand);font-weight:700;background:var(--brand2);cursor:pointer}
+.filebtn input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}
+details summary{cursor:pointer;font-weight:600}
+details{margin-top:8px}
+.note{font-size:13px;color:var(--sub)}
+#stage{position:relative;background:#000;border-radius:12px;overflow:hidden;margin:0 auto;max-height:70vh}
+#stage video,#stage canvas{position:absolute;inset:0;width:100%;height:100%}
+#stage video{object-fit:contain}
+#phaseTag{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:13px;padding:3px 8px;border-radius:8px;pointer-events:none}
+.progress{height:10px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:10px}
+.progress>div{height:100%;width:0;background:var(--brand);transition:width .2s}
+#msg{font-size:14px;margin-top:6px}
+.err{color:var(--bad);font-weight:600}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+.chips button{flex:0 0 auto}
+.score{display:flex;align-items:center;gap:16px}
+.score .num{font-size:44px;font-weight:800;color:var(--brand);line-height:1}
+.score .num small{font-size:16px;color:var(--sub);font-weight:500}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px}
+.kv dt{color:var(--sub)}
+.kv dd{margin:0;font-weight:600}
+.theme{border-left:4px solid var(--bad);padding:6px 10px;margin:8px 0;background:var(--badbg);border-radius:0 8px 8px 0}
+.theme.warn{border-color:var(--warn);background:var(--warnbg)}
+.theme b{display:block}
+.seq{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.seq figure{margin:0;cursor:pointer}
+.seq img{width:100%;border-radius:8px;display:block;background:#000}
+.seq figcaption{font-size:12px;text-align:center;color:var(--sub)}
+.phase{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+.phase:first-of-type{border-top:0;margin-top:0;padding-top:0}
+.phase .desc{font-size:13px;color:var(--sub);margin:0 0 8px}
+.check{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
+.check .hd{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.badge{font-size:12px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.badge.good{color:var(--good);background:var(--goodbg)}
+.badge.warn{color:var(--warn);background:var(--warnbg)}
+.badge.bad{color:var(--bad);background:var(--badbg)}
+.badge.na{color:var(--sub);background:var(--line)}
+.check .val{font-size:14px;margin:4px 0}
+.check .val span{color:var(--sub)}
+.check p{margin:4px 0;font-size:14px}
+.check .lbl{font-weight:700;font-size:13px}
+.hist-item{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:8px 0;font-size:14px;gap:8px}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--sub);flex-wrap:wrap;margin-top:6px}
+.legend i{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:4px}
+.hidden{display:none !important}
+.gloss dt{font-weight:700;margin-top:8px}
+.gloss dd{margin:0 0 0 0;font-size:14px;color:var(--sub)}
+#confirmBox{margin-top:8px;padding:8px;border:1px solid var(--bad);border-radius:8px;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+  <h1>⛳ マイ・スイング解析</h1>
+  <p class="lead">iPhoneで撮ったスイング動画から体の動き（骨格）をAIで読み取り、スイング軌道と動作ごとの改善ポイントを解説します。動画はこの端末の中だけで解析され、どこにも送信されません。</p>
+
+  <!-- 1. 入力 -->
+  <section class="card" id="inputCard">
+    <h2>① スイング動画を選ぶ</h2>
+    <label class="filebtn">🎥 動画を選ぶ（カメラロールから）
+      <input type="file" id="file" accept="video/*">
+    </label>
+    <div class="field">
+      <label class="t">撮影した角度</label>
+      <div class="seg" id="segView">
+        <button data-v="auto" class="on">自動判定</button>
+        <button data-v="fo">正面</button>
+        <button data-v="dtl">後方</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label class="t">利き打ち</label>
+        <div class="seg" id="segHand">
+          <button data-v="R" class="on">右打ち</button>
+          <button data-v="L">左打ち</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="t">身長（cm）※動きの大きさを「約○cm」で表示するため</label>
+        <input type="number" id="height" min="120" max="220" value="170">
+      </div>
+    </div>
+    <details>
+      <summary>📷 上手に撮るコツ（はじめにお読みください）</summary>
+      <ul class="note">
+        <li><b>正面</b>＝自分のおへその正面からカメラを向ける撮り方。体重移動・頭のブレ・体の回転が分かります。</li>
+        <li><b>後方</b>＝打つ方向（目標）の真後ろ、手元の延長線上から撮る撮り方。スイング軌道（インサイド／アウトサイド）・前傾角度が分かります。</li>
+        <li>三脚などで固定し、<b>腰くらいの高さ</b>から撮影。頭から足先まで全身が入るように。</li>
+        <li><b>通常速度</b>で撮影（スローモーションは時間の計算がずれるため非推奨）。</li>
+        <li>動画は<b>3〜10秒</b>程度が理想。長い場合は写真アプリの「編集」で前後をカットしてください。</li>
+        <li>明るい場所で、体の線が分かる服装だと精度が上がります。</li>
+      </ul>
+    </details>
+  </section>
+
+  <!-- 2. 動画と解析 -->
+  <section class="card hidden" id="stageCard">
+    <div id="stage">
+      <video id="video" playsinline muted preload="auto"></video>
+      <canvas id="overlay"></canvas>
+      <div id="phaseTag" class="hidden"></div>
+    </div>
+    <div id="analyzeBox">
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" id="analyzeBtn">② この動画を解析する</button>
+      </div>
+      <div class="progress"><div id="bar"></div></div>
+      <div id="msg" class="note">「解析する」を押すと始まります。初回はAIモデル（約15MB・Google公式の骨格推定AI）の読み込みに少し時間がかかります。Wi-Fi環境がおすすめです。</div>
+    </div>
+    <div id="playerBox" class="hidden">
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="playBtn">▶ 再生</button>
+        <div class="seg" id="segSpeed">
+          <button data-v="1">等速</button>
+          <button data-v="0.5">1/2</button>
+          <button data-v="0.25" class="on">1/4</button>
+        </div>
+        <button class="btn small" id="prevBtn">◀ コマ</button>
+        <button class="btn small" id="nextBtn">コマ ▶</button>
+      </div>
+      <div class="chips" id="phaseChips"></div>
+      <div class="row">
+        <button class="btn small on" id="tSkel">骨格</button>
+        <button class="btn small on" id="tPath">軌道</button>
+        <button class="btn small on" id="tRef">基準線</button>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--back)"></i>バックスイング（振り上げ）</span>
+        <span><i style="background:var(--down)"></i>ダウンスイング（振り下ろし）</span>
+        <span><i style="background:var(--follow)"></i>フォロー</span>
+        <span><i style="background:#ffd23f"></i>アドレス時の基準線</span>
+      </div>
+      <p class="note">※線は「両手（グリップ）の通り道」です。クラブヘッドそのものはAIで検出できないため、手の軌道でスイング軌道を判定しています。</p>
+    </div>
+  </section>
+
+  <!-- 3. 結果 -->
+  <div id="results" class="hidden">
+    <section class="card">
+      <h2>総合結果</h2>
+      <div class="score">
+        <div class="num" id="scoreNum">--<small>/100</small></div>
+        <dl class="kv" id="summaryKv"></dl>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="note">撮影角度の判定が違う場合は切り替え →</span>
+        <div class="seg" id="segView2">
+          <button data-v="fo">正面</button>
+          <button data-v="dtl">後方</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>🎯 今週の練習テーマ</h2>
+      <p class="note">スイングは「前の動作の乱れ」が後の動作に連鎖します。そのため、早い段階（アドレス側）の課題から優先して並べています。まずは1番目だけに集中するのがおすすめです。</p>
+      <div id="themes"></div>
+    </section>
+
+    <section class="card">
+      <h2>📸 連続写真</h2>
+      <p class="note">タップするとその場面に移動します。</p>
+      <div class="seq" id="seq"></div>
+    </section>
+
+    <section class="card">
+      <h2>🔍 動作ごとの解説</h2>
+      <div id="phases"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>📈 これまでの記録</h2>
+    <p class="note">この端末のブラウザ内にだけ保存されます（他の端末やClaudeには送られません）。</p>
+    <div id="history"><p class="note">まだ記録がありません。</p></div>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>📖 ゴルフ用語集</summary>
+      <dl class="gloss" id="gloss"></dl>
+    </details>
+    <details>
+      <summary>⚠️ このアプリの限界</summary>
+      <ul class="note">
+        <li>AIは2D（平面）の動画から体の関節位置を推定しています。角度や移動量は<b>目安</b>です。</li>
+        <li>クラブヘッドやボールは検出しません。「スイング軌道」は両手の通り道から判定しています。</li>
+        <li>判定の基準値は一般的なレッスン理論をもとにした目安で、体格や打ちたい球筋によって正解は変わります。</li>
+        <li>体の一部が隠れる・暗い・カメラが動くと精度が落ちます。</li>
+      </ul>
+    </details>
+  </section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
