@@ -402,6 +402,19 @@ function detectView() {
 }
 
 // ---------- 判定 ----------
+// 採点：良い100・注意50・要改善0 を、項目の重み（球筋への影響の大きさ）で平均する
+const PT = { good: 100, warn: 50, bad: 0 };
+const W3 = ['テンポ', '肩の回転（推定）', '下半身リード', '胸の向き', '体重移動', 'スイング軌道', '腰の突っ込み', '前傾角度のキープ（インパクト）', '腰の開き'];
+const W2 = ['捻転差', 'スウェー', '頭の位置', 'ハンドファースト', '手元の位置（インパクト）', 'テークバックの方向', 'フライングエルボー', '頭の高さ', '前傾角度のキープ（トップ）', 'トップの手の位置', '頭の前後', 'チキンウィング', '三角形'];
+const weightOf = (name) => (W3.some((w) => name.includes(w)) ? 3 : W2.some((w) => name.includes(w)) ? 2 : 1);
+function calcScore(list) { // list: [{name, st}]
+  let sw = 0, sp = 0;
+  for (const c of list) { if (!(c.st in PT)) continue; const w = weightOf(c.name); sw += w; sp += w * PT[c.st]; }
+  return sw ? Math.round(sp / sw) : 0;
+}
+const LEVELS = [[90, 'プロ級'], [80, '上級者レベル'], [70, '中級者レベル'], [60, '初中級者レベル'], [0, 'これから伸びる段階']];
+const levelOf = (sc) => LEVELS.find(([min]) => sc >= min)[1];
+const SCORE_VER = 2;
 const cm = (norm) => Math.round(Math.abs(norm) * S.heightCm * 0.89);
 function grade(v, good, warn) {
   if (v >= good[0] && v <= good[1]) return 'good';
@@ -546,6 +559,16 @@ function evaluate(saveHist) {
 
     // インパクト
     const wShift = along(hipM(a), hipM(im));
+    const hipI = turn(im, L.lHip, L.rHip, hipW0);
+    const stHip = grade(hipI, [25, 90], [12, 90]);
+    add('impact', {
+      name: 'インパクトでの腰の開き', status: stHip,
+      value: `腰が構えより 約${hipI.toFixed(0)}° 目標方向へ回っている`, ideal: '約30〜45°（腰は先に回り、肩はほぼ正面）',
+      about: '上手な人は、インパクトの瞬間にはもう腰が目標方向へ回り始めています（肩はほぼ正面）。腰が構えと同じ向きのままだと、腕の力だけで打つ「手打ち」になり、飛距離も方向も安定しません。',
+      fix: stHip === 'good' ? '腰がしっかり先に回っています。' : `腰の回転が止まったまま打っています（手打ち）。振り下ろしでは${sd.leadName}腰を後ろへ引くように回し、インパクトでベルトのバックルが目標の少し${sd.leadName}を向くようにしましょう。`,
+      drill: `クラブを腰に当てて構え、振り下ろしの動きで腰だけを回す練習。インパクトの位置で、クラブの先が目標より${sd.leadName}を向くまで回します。`,
+    });
+
     const c10 = crit('shift');
     const st10 = grade(wShift, c10.good, c10.warn);
     add('impact', {
@@ -720,6 +743,17 @@ function evaluate(saveHist) {
       drill: path > cs8.good[1] ? 'ボールの外側（向こう側）にヘッドカバーなどを置き、当てないように打つ練習（外から下りると当たる）。' : 'ボールの内側（手前）に障害物を置き、当てないように打つ練習。',
     });
 
+    const headF = toward(P(a, L.nose), P(im, L.nose));
+    const sHf = grade(headF, [-0.04, 0.03], [-0.07, 0.06]);
+    add('impact', {
+      name: '頭の前後の動き（インパクト）', status: sHf,
+      value: headF > 0.03 ? `頭が構えよりボール側へ 約${cm(headF)}cm 出ている` : headF < -0.04 ? `頭が構えより体側へ 約${cm(headF)}cm 引けている（のけぞり）` : '頭の前後の位置が保たれている',
+      ideal: '構えた位置から約5cm以内',
+      about: '頭がボール側へ出るのは上体が突っ込んでいるサイン、体側へ引けるのは上体がのけぞっているサインです。どちらも前傾が崩れ、クラブの通り道がずれる原因になります。',
+      fix: sHf === 'good' ? '頭の位置が安定しています。' : headF > 0 ? '上体がボール側へ突っ込んでいます。体重はかかと寄りに感じたまま、その場で回りましょう。' : '上体がのけぞっています。インパクトまで胸を地面に向けたまま回しましょう。',
+      drill: '後方から撮影するときに、構えた頭の位置に目印（画面にマスキングテープなど）を付け、打ち終わるまで頭がはみ出さないか確認。',
+    });
+
     const ee = toward(hipM(a), hipM(im));
     const s9 = grade(ee, [-1, 0.025], [-1, 0.05]);
     add('impact', {
@@ -778,7 +812,7 @@ function evaluate(saveHist) {
 
   S.checks = C;
   const scored = C.filter((c) => c.status !== 'na');
-  S.score = Math.round(scored.reduce((s, c) => s + (c.status === 'good' ? 100 : c.status === 'warn' ? 60 : 25), 0) / (scored.length || 1));
+  S.score = calcScore(scored.map((c) => ({ name: c.name, st: c.status })));
   render(back, down, ratio);
   recordEntry(back, down, ratio);
 }
@@ -797,15 +831,25 @@ function render(back, down, ratio) {
     <dt>撮影角度</dt><dd>${S.view === 'fo' ? '正面' : '後方'}${S.viewPref === 'auto' ? '（自動判定）' : ''}</dd>
     <dt>テンポ</dt><dd>約 ${ratio.toFixed(1)} : 1</dd>
     <dt>スイング時間</dt><dd>${(back + down).toFixed(2)}秒（トップまで ${back.toFixed(2)}秒）</dd>
+    <dt>レベル</dt><dd>${levelOf(S.score)}</dd>
     <dt>判定</dt><dd>良い ${nG}・注意 ${nW}・要改善 ${nB}</dd>
     <dt>前回比</dt><dd id="vsPrev">－</dd>`;
 
   const order = PHASES.map((p) => p.key);
+  // 優先度＝重み×深刻さ（要改善は注意の2倍）。同じなら早い動作から（前の乱れが後に連鎖するため）
+  const prio = (c) => weightOf(c.name) * (c.status === 'bad' ? 2 : 1);
   const issues = S.checks.filter((c) => c.status === 'bad' || c.status === 'warn')
-    .sort((x, y) => (x.status === y.status ? 0 : x.status === 'bad' ? -1 : 1) || order.indexOf(x.phase) - order.indexOf(y.phase));
+    .sort((x, y) => prio(y) - prio(x) || order.indexOf(x.phase) - order.indexOf(y.phase));
   const pName = (k) => PHASES.find((p) => p.key === k).name;
+  const gain = (c) => { // この項目が「良い」になったら何点上がるか
+    const list = S.checks.filter((x) => x.status !== 'na').map((x) => ({ name: x.name, st: x === c ? 'good' : x.status }));
+    return calcScore(list) - S.score;
+  };
+  const card = (c, i) => `<div class="theme ${c.status}"><b>${i + 1}. 【${pName(c.phase)}】${esc(c.name)}<span class="note" style="font-weight:400">（直すと +${gain(c)}点）</span></b>${esc(c.fix)}<br><span class="note">練習法：${esc(c.drill)}</span></div>`;
+  const rest = issues.slice(3);
   $('#themes').innerHTML = issues.length
-    ? issues.slice(0, 3).map((c, i) => `<div class="theme ${c.status}"><b>${i + 1}. 【${pName(c.phase)}】${esc(c.name)}</b>${esc(c.fix)}<br><span class="note">練習法：${esc(c.drill)}</span></div>`).join('')
+    ? issues.slice(0, 3).map(card).join('')
+      + (rest.length ? `<details><summary>ほかの改善点（${rest.length}件）</summary><p class="note">上の3つが直ってきたら、次はこちらに取り組みましょう（大事な順）。</p>${rest.map((c, i) => card(c, i + 3)).join('')}</details>` : '')
     : '<p>大きな課題は見つかりませんでした。今の動きを再現できるよう、同じ条件で撮影して比べていきましょう。</p>';
 
   $('#phases').innerHTML = PHASES.map((p) => {
@@ -1095,7 +1139,7 @@ $('#pfDelete').addEventListener('click', () => {
 // 解析結果を記録する（同じ動画で角度などを切り替えた時は、新しく増やさず上書き）
 function recordEntry(back, down, ratio) {
   const checks = S.checks.filter((c) => c.status !== 'na').map((c) => ({ k: c.phase + '|' + c.name, phase: c.phase, name: c.name, st: c.status, v: c.value }));
-  const data = { file: S.fileName, view: S.view, club: S.club, score: S.score, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
+  const data = { file: S.fileName, view: S.view, club: S.club, score: S.score, sv: SCORE_VER, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
   if (!(S.entry && S.entry.discarded)) {
     const pid = S.entry ? S.entry.pid : curProfile().id;
     const h = hist(pid);
@@ -1278,6 +1322,20 @@ $('#importFile').addEventListener('change', async (e) => {
   }
 });
 
+// 採点方法を変えたので、保存済みの記録の点数を新しい計算で付け直す（判定の中身は変えない）
+function migrateScores() {
+  for (const p of profiles()) {
+    const h = hist(p.id);
+    let changed = false;
+    for (const r of h) {
+      if (r.sv === SCORE_VER || !r.checks || !r.checks.length) continue;
+      r.score = calcScore(r.checks.map((c) => ({ name: c.name, st: c.st })));
+      r.sv = SCORE_VER; changed = true;
+    }
+    if (changed) setHist(p.id, h);
+  }
+}
+migrateScores();
 applyProfile();
 renderGrowth();
 
@@ -1301,6 +1359,7 @@ const GLOSS = [
   ['フライングエルボー', 'トップで後ろ側のひじが外に浮く形。'],
   ['ダフリ／トップ', 'ダフリ＝ボールの手前の地面を打つミス。トップ＝ボールの上部を打つミス（※トップの位置とは別の意味）。'],
   ['テンポ', 'スイングのリズム。振り上げ：振り下ろしの時間比で表す。'],
+  ['手打ち', '体（腰や肩）の回転を使わず、腕の力だけでクラブを振ること。飛距離も方向も安定しない。'],
   ['インサイドイン', '体の内側から入り、内側へ抜ける軌道。方向性と飛距離が安定する、理想とされる軌道。'],
   ['ハーフウェイダウン', '振り下ろしの途中で、手元が腰の高さまで下りた場面。胸がまだ後ろを向いているのが理想。'],
   ['チキンウィング', 'インパクト後に目標側のひじが引けて曲がる形。アウトサイドイン軌道の人に多い。'],
