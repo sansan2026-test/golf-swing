@@ -165,7 +165,7 @@ async function detect(canvas) {
 const video = $('#video');
 const overlay = $('#overlay');
 const octx = overlay.getContext('2d');
-const msg = (t, err) => { const m = $('#msg'); m.textContent = t; m.className = err ? 'err' : 'note'; };
+const msg = (t, err) => { const m = $('#msg'); m.textContent = (S.clipLabel || '') + t; m.className = err ? 'err' : 'note'; };
 const bar = (p) => { $('#bar').style.width = Math.round(p * 100) + '%'; };
 
 function segInit(id, cur, onChange) {
@@ -194,27 +194,18 @@ function toggle(id, key) {
 toggle('#tSkel', 'skel'); toggle('#tPath', 'path'); toggle('#tRef', 'ref');
 
 // ---------- 動画の読み込み ----------
-$('#file').addEventListener('change', async (e) => {
-  const f = e.target.files && e.target.files[0];
-  if (!f) return;
-  S.analyzed = false; S.posed = false; S.fileName = f.name; S.entry = null; S.fcache = new Map();
-  $('#analyzeBtn').textContent = '② この動画を解析する';
-  $('#results').classList.add('hidden');
-  $('#playerBox').classList.add('hidden');
-  $('#analyzeBox').classList.remove('hidden');
-  $('#phaseTag').classList.add('hidden');
-  $('#stageCard').classList.remove('hidden');
-  $('#analyzeBtn').disabled = true;
-  bar(0); msg('動画を読み込み中…');
-  if (video.src) URL.revokeObjectURL(video.src);
-  video.src = URL.createObjectURL(f);
-  video.muted = true; video.playsInline = true;
-  try {
+// 動画を読み込んで、表示枠の大きさを合わせる
+async function loadVideo(url) {
+  const same = video.dataset.loaded === url && video.readyState >= 2;
+  if (!same) {
+    video.src = url;
+    video.muted = true; video.playsInline = true;
     await new Promise((res, rej) => {
-      video.onloadeddata = res; video.onerror = () => rej(new Error('この動画形式は読み込めませんでした'));
+      video.onloadeddata = () => { video.dataset.loaded = url; res(); };
+      video.onerror = () => rej(new Error('この動画形式は読み込めませんでした'));
       video.load();
     });
-  } catch (err) { msg(err.message, true); return; }
+  }
   S.vw = video.videoWidth; S.vh = video.videoHeight;
   const ar = S.vw / S.vh;
   const st = $('#stage');
@@ -223,8 +214,37 @@ $('#file').addEventListener('change', async (e) => {
   sizeOverlay();
   octx.setTransform(1, 0, 0, 1, 0, 0);
   octx.clearRect(0, 0, overlay.width, overlay.height);
+}
+
+const MAX_CLIPS = 5;
+$('#file').addEventListener('change', async (e) => {
+  const fl = Array.from((e.target.files) || []).slice(0, MAX_CLIPS);
+  if (!fl.length) return;
+  const f = fl[0];
+  // 前に選んだ動画の後片付け
+  if (S.clips) S.clips.forEach((c) => URL.revokeObjectURL(c.url));
+  if (S.singleUrl) URL.revokeObjectURL(S.singleUrl);
+  S.clips = fl.length > 1 ? fl.map((x) => ({ fileName: x.name, url: URL.createObjectURL(x) })) : null;
+  S.singleUrl = S.clips ? null : URL.createObjectURL(f);
+  S.multi = null; S.multiSkipped = [];
+  S.analyzed = false; S.posed = false; S.fileName = f.name; S.entry = null; S.fcache = new Map();
+  $('#analyzeBtn').textContent = S.clips ? `② ${fl.length}本まとめて解析する` : '② この動画を解析する';
+  $('#clipBox').classList.add('hidden');
+  $('#results').classList.add('hidden');
+  $('#playerBox').classList.add('hidden');
+  $('#analyzeBox').classList.remove('hidden');
+  $('#phaseTag').classList.add('hidden');
+  $('#stageCard').classList.remove('hidden');
+  $('#analyzeBtn').disabled = true;
+  S.clipLabel = '';
+  bar(0); msg('動画を読み込み中…');
+  try { await loadVideo(S.clips ? S.clips[0].url : S.singleUrl); } catch (err) { msg(err.message, true); return; }
   const d = video.duration;
-  msg(`動画の長さ：${d.toFixed(1)}秒。${d > 15 ? '※長めの動画です。解析に時間がかかります（スイング部分だけにカットするのがおすすめ）。' : '「解析する」を押してください。'}`);
+  if (S.clips) {
+    msg(`${fl.length}本の動画を選びました（1本目を表示中）。同じ角度・同じクラブで撮った動画をまとめて判定し、毎回出ている課題を見つけます。1本ずつ読み取るので、本数に応じて時間がかかります。`);
+  } else {
+    msg(`動画の長さ：${d.toFixed(1)}秒。${d > 15 ? '※長めの動画です。解析に時間がかかります（スイング部分だけにカットするのがおすすめ）。' : '「解析する」を押してください。'}`);
+  }
   $('#analyzeBtn').disabled = false;
   $('#stageCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
@@ -254,10 +274,14 @@ async function analyze() {
   const btn = $('#analyzeBtn');
   btn.disabled = true;
   try {
-    if (!S.posed) await readPose();
-    S.ph = detectPhases();
-    S.autoView = detectView();
-    S.view = S.viewPref === 'auto' ? S.autoView : S.viewPref;
+    if (S.clips && S.clips.length > 1) await analyzeMulti();
+    else {
+      S.multi = null;
+      if (!S.posed) await readPose();
+      S.ph = detectPhases();
+      S.autoView = detectView();
+      S.view = S.viewPref === 'auto' ? S.autoView : S.viewPref;
+    }
     paintView2(S.view);
     S.analyzed = true;
     S.entry = null; // 今のプレーヤーの新しい記録として保存する
@@ -276,6 +300,127 @@ async function analyze() {
     msg('エラー：' + (err.message || err), true);
     btn.disabled = false;
   }
+}
+
+// ---------- 複数の動画をまとめて解析 ----------
+// 1本ずつ骨格を読み取り、それぞれ判定してから「毎回出ている課題」をまとめる。
+// 動画ごとの情報（骨格・動作の区切り・解説図用のコマ画像）は clip に保存し、必要な時に入れ替える。
+const CLIP_KEYS = ['frames', 'ph', 'n', 'dt', 'W', 'H', 'vw', 'vh', 'autoView', 'fcache', 'fileName'];
+const saveClip = (c) => { CLIP_KEYS.forEach((k) => { c[k] = S[k]; }); };
+const setClip = (c) => { CLIP_KEYS.forEach((k) => { S[k] = c[k]; }); };
+function withClip(c, fn) {
+  const keep = {}; CLIP_KEYS.forEach((k) => { keep[k] = S[k]; });
+  setClip(c);
+  try { return fn(); } finally { CLIP_KEYS.forEach((k) => { S[k] = keep[k]; }); }
+}
+const silentEval = () => { S.silent = true; try { return evalCore(); } finally { S.silent = false; } };
+
+async function analyzeMulti() {
+  const clips = S.clips;
+  for (let j = 0; j < clips.length; j++) {
+    const c = clips[j];
+    if (c.frames || c.err) continue; // 読み取り済み
+    S.clipLabel = `【${j + 1}/${clips.length}本目】`;
+    try {
+      await loadVideo(c.url);
+      S.fcache = new Map(); S.fileName = c.fileName;
+      await readPose();
+      S.ph = detectPhases();
+      S.autoView = detectView();
+      // 解説図に使うコマを、この動画を開いている間に切り出しておく
+      S.view = S.viewPref === 'auto' ? S.autoView : S.viewPref;
+      silentEval();
+      for (const i of new Set(S.checks.filter((x) => x.viz).map((x) => x.viz.i))) await frameImg(i);
+      saveClip(c);
+    } catch (err) {
+      console.error(err);
+      c.err = err.message || String(err);
+    }
+  }
+  S.clipLabel = '';
+  const ok = clips.filter((c) => c.frames);
+  if (!ok.length) throw new Error('どの動画からもスイングを見つけられませんでした。' + (clips[0].err || ''));
+  // 撮影角度：自動判定なら多い方にそろえ、違う角度の動画は外す
+  const nFo = ok.filter((c) => c.autoView === 'fo').length;
+  S.view = S.viewPref === 'auto' ? (nFo * 2 >= ok.length ? 'fo' : 'dtl') : S.viewPref;
+  const use = S.viewPref === 'auto' ? ok.filter((c) => c.autoView === S.view) : ok;
+  S.multiSkipped = clips.filter((c) => !use.includes(c)).map((c) => `${c.fileName}（${c.err ? 'スイングを見つけられませんでした' : '撮影角度が違います'}）`);
+  if (use.length > 1) {
+    S.multi = { clips: use, cur: null };
+    // 代表の動画＝点数が真ん中の動画（極端に良い・悪い1本に引っ張られないように）
+    const sc = use.map((c) => withClip(c, () => { silentEval(); return S.score; }));
+    const med = [...sc].sort((x, y) => x - y)[Math.floor(sc.length / 2)];
+    await showClip(use[sc.indexOf(med)], false);
+  } else {
+    S.multi = null;
+    await loadVideo(use[0].url);
+    setClip(use[0]); S.posed = true;
+  }
+}
+
+// 表示する動画を切り替える（複数解析のとき）
+async function showClip(c, rebuild = true) {
+  if (!S.multi) return;
+  video.pause();
+  await loadVideo(c.url);
+  setClip(c); S.posed = true;
+  S.multi.cur = c;
+  renderClipTabs();
+  if (rebuild) {
+    buildChips();
+    await serial(buildSequence);
+    await seek(S.ph.address * S.dt);
+    draw();
+  }
+}
+
+function renderClipTabs() {
+  const box = $('#clipBox');
+  if (!S.multi) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  $('#clipTabs').innerHTML = S.multi.clips.map((c, i) => `<button data-i="${i}" class="${c === S.multi.cur ? 'on' : ''}">${i + 1}本目${c.score != null ? `（${c.score}点）` : ''}</button>`).join('');
+  $$('#clipTabs button').forEach((b) => b.addEventListener('click', () => showClip(S.multi.clips[+b.dataset.i])));
+  $('#clipName').textContent = `表示中：${S.multi.cur ? S.multi.cur.fileName : ''}`;
+}
+
+// 各動画の判定をまとめる：良い100・注意50・要改善0 の平均で決める（75より上＝良い、30以上＝注意）
+function evaluateMulti() {
+  const M = S.multi;
+  let tb = 0, td = 0;
+  for (const c of M.clips) {
+    withClip(c, () => {
+      const r = silentEval();
+      c.score = S.score;
+      c.checks = S.checks.map((x) => Object.assign(x, { __clip: c }));
+      tb += r.back; td += r.down;
+    });
+  }
+  const per = M.clips;
+  const keys = [];
+  for (const c of per) for (const x of c.checks) { const k = x.phase + '|' + x.name; if (!keys.includes(k)) keys.push(k); }
+  const PH = PHASES.map((p) => p.key);
+  keys.sort((x, y) => PH.indexOf(x.split('|')[0]) - PH.indexOf(y.split('|')[0]));
+  const agg = [];
+  for (const k of keys) {
+    const items = per.map((c) => c.checks.find((x) => x.phase + '|' + x.name === k)).filter((x) => x && x.status !== 'na');
+    if (!items.length || items.length * 2 < per.length) continue; // 半分以上の動画で判定できた項目だけ
+    const mean = items.reduce((t, x) => t + PT[x.status], 0) / items.length;
+    const st = mean > 75 ? 'good' : mean >= 30 ? 'warn' : 'bad'; // 良い1本＋注意1本は「注意」（たまたま良かった1本で甘くしない）
+    // 説明文は、まとめた判定と同じ（無ければ近い・悪い方の）判定が出た動画のものを使う。代表の動画を優先
+    const pick = [...items].sort((x, y) => (x.status === st ? 0 : 1) - (y.status === st ? 0 : 1)
+      || Math.abs(PT[x.status] - mean) - Math.abs(PT[y.status] - mean) || PT[x.status] - PT[y.status]
+      || (x.__clip === M.cur ? -1 : 0) - (y.__clip === M.cur ? -1 : 0))[0];
+    const cnt = { good: 0, warn: 0, bad: 0 };
+    items.forEach((x) => { cnt[x.status] += 1; });
+    agg.push({ ...pick, status: st, multi: { cnt, n: items.length, values: per.map((c) => { const x = c.checks.find((y) => y.phase + '|' + y.name === k); return x && x.status !== 'na' ? x.value : '判定不可'; }) } });
+  }
+  S.checks = agg;
+  S.score = calcScore(agg.map((c) => ({ name: c.name, st: c.status })));
+  const back = tb / per.length, down = td / per.length, ratio = back / (down || 1);
+  renderClipTabs();
+  render(back, down, ratio);
+  recordEntry(back, down, ratio);
+  return { back, down, ratio };
 }
 
 // 動画の各コマから骨格を読み取る（動画ごとに1回だけ）
@@ -423,7 +568,13 @@ function grade(v, good, warn) {
   return 'bad';
 }
 
+// 判定の入口：複数の動画を解析したときは、まとめて判定する
 function evaluate(saveHist) {
+  if (S.multi && !S.silent) return evaluateMulti();
+  return evalCore(saveHist);
+}
+
+function evalCore(saveHist) {
   const sd = sides();
   const ph = S.ph;
   const a = ph.address, tk = ph.takeaway, tp = ph.top, ds = ph.downswing, im = ph.impact, fi = ph.finish;
@@ -858,8 +1009,10 @@ function evaluate(saveHist) {
   S.checks = C;
   const scored = C.filter((c) => c.status !== 'na');
   S.score = calcScore(scored.map((c) => ({ name: c.name, st: c.status })));
+  if (S.silent) return { back, down, ratio };
   render(back, down, ratio);
   recordEntry(back, down, ratio);
+  return { back, down, ratio };
 }
 
 // ---------- 結果の表示 ----------
@@ -872,6 +1025,8 @@ function render(back, down, ratio) {
   const nW = S.checks.filter((c) => c.status === 'warn').length;
   const nB = S.checks.filter((c) => c.status === 'bad').length;
   $('#summaryKv').innerHTML = `
+    ${S.multi ? `<dt>解析した動画</dt><dd>${S.multi.clips.length}本（${S.multi.clips.map((c) => c.score + '点').join('・')}）の判定をまとめた結果</dd>` : ''}
+    ${S.multiSkipped && S.multiSkipped.length ? `<dt>外した動画</dt><dd>${esc(S.multiSkipped.join('、'))}</dd>` : ''}
     <dt>クラブ</dt><dd>${clubName(S.club)}</dd>
     <dt>撮影角度</dt><dd>${S.view === 'fo' ? '正面' : '後方'}${S.viewPref === 'auto' ? '（自動判定）' : ''}</dd>
     <dt>テンポ</dt><dd>約 ${ratio.toFixed(1)} : 1</dd>
@@ -902,7 +1057,7 @@ function render(back, down, ratio) {
     return `<div class="phase"><div class="row" style="justify-content:space-between"><h3>${p.name}</h3>
       <button class="btn small" data-jump="${p.key}">▶ この場面を見る</button></div>
       <p class="desc">${p.desc}</p>
-      ${cs.length ? cs.map((c) => `<div class="check">${c.viz ? `<canvas class="vz" data-ci="${S.checks.indexOf(c)}" title="タップでこの場面へ"></canvas>` : ''}<div class="hd"><b>${esc(c.name)}</b><span class="badge ${c.status}">${BADGE[c.status]}</span></div>
+      ${cs.length ? cs.map((c) => `<div class="check">${c.viz ? `<canvas class="vz" data-ci="${S.checks.indexOf(c)}" title="タップでこの場面へ"></canvas>` : ''}<div class="hd"><b>${esc(c.name)}</b><span class="badge ${c.status}">${BADGE[c.status]}</span></div>${c.multi ? `<p class="note" style="margin:2px 0">${c.multi.n}本の内訳：良い ${c.multi.cnt.good}・注意 ${c.multi.cnt.warn}・要改善 ${c.multi.cnt.bad}${c.multi.cnt.bad + c.multi.cnt.warn === c.multi.n && c.multi.n > 1 ? '（毎回出ている課題）' : ''}</p>` : ''}
         <div class="val">${esc(c.value)}<br><span>目安：${esc(c.ideal)}</span></div>
         ${c.about ? `<p><span class="lbl">ここを見ています：</span>${esc(c.about)}</p>` : ''}
         <p><span class="lbl">アドバイス：</span>${esc(c.fix)}</p>
@@ -911,7 +1066,12 @@ function render(back, down, ratio) {
     </div>`;
   }).join('');
   $$('#phases [data-jump]').forEach((b) => b.addEventListener('click', () => jump(b.dataset.jump, true)));
-  $$('#phases canvas.vz').forEach((cv) => cv.addEventListener('click', () => { const c = S.checks[+cv.dataset.ci]; if (c && c.viz) jumpFrame(c.viz.i); }));
+  $$('#phases canvas.vz').forEach((cv) => cv.addEventListener('click', async () => {
+    const c = S.checks[+cv.dataset.ci];
+    if (!c || !c.viz) return;
+    if (S.multi && c.__clip && c.__clip !== S.multi.cur) await showClip(c.__clip);
+    jumpFrame(c.viz.i);
+  }));
   queueViz();
   renderPros();
 }
@@ -973,6 +1133,10 @@ async function buildViz(tok) {
     if (tok !== S.vizTok) return; // 判定し直したので、古い図づくりはやめる
     const c = S.checks[+cv.dataset.ci];
     if (!c || !c.viz) continue;
+    if (c.__clip && S.multi) {
+      withClip(c.__clip, () => { const img = S.fcache && S.fcache.get(c.viz.i); if (img) paintViz(cv, c, img); else cv.style.display = 'none'; });
+      continue;
+    }
     if (!S.fcache.has(c.viz.i)) moved = true;
     const img = await frameImg(c.viz.i);
     if (tok !== S.vizTok) return;
@@ -989,7 +1153,8 @@ function paintViz(cv, c, img) {
   const KEYS = [0, 11, 12, 15, 16, 23, 24, 27, 28, 29, 30, 31, 32];
   KEYS.forEach((k) => inc(P(v.i, k)));
   if (v.ref != null) KEYS.forEach((k) => inc(P(v.ref, k)));
-  if (v.path) for (let i = S.ph.start; i <= v.i; i++) inc(hand(i));
+  let ideal = null;
+  if (v.path) { for (let i = S.ph.start; i <= v.i; i++) inc(hand(i)); ideal = idealPath(); [...ideal.back, ...ideal.down].forEach(inc); }
   const pad = 0.1 * Math.max(x1 - x0, y1 - y0);
   x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(S.W, x1 + pad); y1 = Math.min(S.H, y1 + pad);
   const bw = Math.max(10, x1 - x0), bh = Math.max(10, y1 - y0);
@@ -1029,6 +1194,10 @@ function paintViz(cv, c, img) {
     (v.mark || []).forEach((m) => dot(m(v.ref), GH, 7, true));
   }
   if (v.path) {
+    // お手本（白の点線）を先に描き、その上に本人の通り道を重ねる
+    cx.save(); cx.translate(ox - x0 * k, oy - y0 * k);
+    strokeIdeal(cx, ideal.back, k, 2.5); strokeIdeal(cx, ideal.down, k, 2.5);
+    cx.restore();
     const seg = (from, to, color) => { for (let i = from; i < to; i++) line(hand(i), hand(i + 1), color, false, 2.5); };
     seg(S.ph.start, S.ph.top, '#2f8cff');
     seg(S.ph.top, v.i, '#ff5a36');
@@ -1083,7 +1252,68 @@ function drawSkeleton(cx, i, k, lw) {
   for (const j of [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]) { cx.beginPath(); cx.arc(f[j * 3] * k, f[j * 3 + 1] * k, lw * 2, 0, 7); cx.fill(); }
 }
 
+// ---------- お手本の通り道（手元） ----------
+// その人の体格・クラブに合わせて作る目安。
+// 後方：構えた手元 →（ほぼまっすぐ）→ トップ、振り下ろしは振り上げより少し内側を通って構えた位置へ戻る。
+//       トップの位置と内側への量は、判定の基準（クラブ別）の真ん中の値を使う。
+// 正面：肩の中心を軸に、腕の長さを半径にした円を描く。
+const IDEAL_COL = 'rgba(255,255,255,0.95)';
+function idealPath() {
+  const ph = S.ph, a = ph.address, tp = ph.top, sd = sides(), H = bodyScale(a);
+  const h0 = hand(a);
+  const midr = (r) => (r[0] + r[1]) / 2;
+  const bez = (p0, c, p1) => Array.from({ length: 25 }, (_, j) => { const t = j / 24, u = 1 - t; return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, y: u * u * p0.y + 2 * u * t * c.y + t * t * p1.y }; });
+  if (S.view === 'dtl') {
+    const fdir = Math.sign((P(a, L.lToe).x + P(a, L.rToe).x) - (P(a, L.lHeel).x + P(a, L.rHeel).x))
+      || Math.sign(P(a, L.nose).x - mid(P(a, L.lEar), P(a, L.rEar)).x) || 1;
+    const tsh = P(tp, sd.trailSh);
+    const top = { x: tsh.x + fdir * H * midr(crit('top').good), y: hand(tp).y }; // 高さは本人のトップに合わせる
+    const m = { x: (h0.x + top.x) / 2, y: (h0.y + top.y) / 2 };
+    const dB = 0.02, dD = 2 * (midr(crit('path').good) + dB / 2); // ベジェ曲線の中間点は制御点の半分だけずれる
+    return {
+      back: bez(h0, { x: m.x + fdir * H * dB, y: m.y }, top),
+      down: bez(top, { x: m.x + fdir * H * dD, y: m.y }, h0),
+    };
+  }
+  // 正面：構えた手元・腕が地面と平行の所・本人のトップ の3点を通る円弧
+  const tdir = Math.sign(P(a, sd.trailSh).x - P(a, sd.leadSh).x) || 1; // 画面上で後ろ側の肩がある向き
+  // 腕が地面と平行の所：体が回っているので正面からは腕が短く見え、手元は後ろ側の足の真上〜少し外になる
+  const sc = shM(a), hc = hipM(a);
+  const M = { x: P(a, sd.trailAn).x + tdir * H * 0.03, y: (sc.y + hc.y) / 2 };
+  const T = hand(tp);
+  const arc3 = (p1, p2, p3) => {
+    const d = 2 * (p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y));
+    if (Math.abs(d) < 1e-6) return [p1, p2, p3];
+    const q = (p) => p.x * p.x + p.y * p.y;
+    const c = { x: (q(p1) * (p2.y - p3.y) + q(p2) * (p3.y - p1.y) + q(p3) * (p1.y - p2.y)) / d, y: (q(p1) * (p3.x - p2.x) + q(p2) * (p1.x - p3.x) + q(p3) * (p2.x - p1.x)) / d };
+    const r = dist(c, p1), ang = (p) => Math.atan2(p.y - c.y, p.x - c.x);
+    const a1 = ang(p1), a2 = ang(p2), a3 = ang(p3);
+    const norm = (x) => { while (x < 0) x += 2 * Math.PI; while (x >= 2 * Math.PI) x -= 2 * Math.PI; return x; };
+    // p1 から p2 を通って p3 へ向かう向きを選ぶ
+    let sweep = norm(a3 - a1);
+    if (norm(a2 - a1) > sweep) sweep -= 2 * Math.PI;
+    return Array.from({ length: 31 }, (_, j) => { const t = a1 + sweep * j / 30; return { x: c.x + r * Math.cos(t), y: c.y + r * Math.sin(t) }; });
+  };
+  const back = arc3(h0, M, T);
+  // フォローは振り上げの左右反転（構えた手元を通る縦線で折り返す）
+  const follow = back.map((p) => ({ x: 2 * h0.x - p.x, y: p.y }));
+  return { back, down: [], follow };
+}
+
+// お手本の線：見やすいように黒いふちを付けた白の点線
+function strokeIdeal(cx, pts, k, w) {
+  if (!pts || pts.length < 2) return;
+  const path = () => { cx.beginPath(); pts.forEach((p, j) => (j ? cx.lineTo(p.x * k, p.y * k) : cx.moveTo(p.x * k, p.y * k))); };
+  cx.save(); cx.lineJoin = 'round'; cx.lineCap = 'round';
+  cx.setLineDash([w * 3, w * 2.2]);
+  cx.strokeStyle = 'rgba(0,0,0,0.55)'; cx.lineWidth = w * 2; path(); cx.stroke();
+  cx.strokeStyle = IDEAL_COL; cx.lineWidth = w; path(); cx.stroke();
+  cx.restore();
+}
+
 function drawPath(cx, k, upto, lw) {
+  const ip = idealPath();
+  [ip.back, ip.down, ip.follow].forEach((pts) => strokeIdeal(cx, pts, k, lw * 1.4));
   const ph = S.ph;
   const seg = (from, to, color) => {
     const end = Math.min(to, upto);
@@ -1228,7 +1458,7 @@ function closeResults() {
   $('#analyzeBox').classList.remove('hidden');
   const btn = $('#analyzeBtn');
   btn.disabled = false;
-  btn.textContent = `② この動画を「${curProfile().name}」として判定する`;
+  btn.textContent = `② ${S.clips && S.clips.length > 1 ? `この${S.clips.length}本` : 'この動画'}を「${curProfile().name}」として判定する`;
   bar(0);
   msg('プレーヤーを切り替えたので、結果を閉じました（前のプレーヤーの記録はそのまま残っています）。同じ動画で判定する場合は上のボタンを押してください。体の読み取りは済んでいるので数秒で終わります。');
 }
@@ -1284,7 +1514,7 @@ $('#pfDelete').addEventListener('click', () => {
 // 解析結果を記録する（同じ動画で角度などを切り替えた時は、新しく増やさず上書き）
 function recordEntry(back, down, ratio) {
   const checks = S.checks.filter((c) => c.status !== 'na').map((c) => ({ k: c.phase + '|' + c.name, phase: c.phase, name: c.name, st: c.status, v: c.value }));
-  const data = { file: S.fileName, view: S.view, club: S.club, score: S.score, sv: SCORE_VER, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
+  const data = { file: S.multi ? S.multi.clips.map((c) => c.fileName).join('、') : S.fileName, n: S.multi ? S.multi.clips.length : 1, view: S.view, club: S.club, score: S.score, sv: SCORE_VER, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
   if (!(S.entry && S.entry.discarded)) {
     const pid = S.entry ? S.entry.pid : curProfile().id;
     const h = hist(pid);
@@ -1412,7 +1642,7 @@ function renderHistory(pid, all) {
   const box = $('#history');
   const h = all.slice().reverse();
   if (!h.length) { box.innerHTML = '<p class="note">まだ記録がありません。</p>'; return; }
-  box.innerHTML = h.map((r) => `<div class="hist-item"><div><b>${fmtDate(r.at)}</b>（${r.view === 'fo' ? '正面' : '後方'}・${r.club ? clubName(r.club) : 'クラブ未設定'}）スコア <b>${r.score}</b>・テンポ ${r.tempo}:1
+  box.innerHTML = h.map((r) => `<div class="hist-item"><div><b>${fmtDate(r.at)}</b>（${r.view === 'fo' ? '正面' : '後方'}・${r.club ? clubName(r.club) : 'クラブ未設定'}${r.n > 1 ? `・${r.n}本まとめ` : ''}）スコア <b>${r.score}</b>・テンポ ${r.tempo}:1
       <br><span class="note">${esc(r.file || '')}</span></div>
       <button class="btn small" data-del="${r.id}">削除</button></div>`).join('')
     + (pendingDel ? `<div id="confirmBox">この記録を削除しますか？（元に戻せません）

@@ -146,8 +146,9 @@ details{margin-top:8px}
   <section class="card" id="inputCard">
     <h2>① スイング動画を選ぶ</h2>
     <label class="filebtn">🎥 動画を選ぶ（カメラロールから）
-      <input type="file" id="file" accept="video/*">
+      <input type="file" id="file" accept="video/*" multiple>
     </label>
+    <p class="note" style="margin:6px 0 0">同じ角度・同じクラブで撮った動画を<b>まとめて選ぶ（最大5本）</b>と、全部を判定して「毎回出ている課題」を見つけます。1本だけのたまたまのミスに振り回されず、判定の精度が上がります。</p>
     <div class="field">
       <label class="t">打ったクラブ（クラブによって正しい構え・打ち方の基準が変わります）</label>
       <div class="seg" id="segClub">
@@ -194,6 +195,10 @@ details{margin-top:8px}
       <div id="msg" class="note">「解析する」を押すと始まります。初回はAIモデル（約15MB・Google公式の骨格推定AI）の読み込みに少し時間がかかります。Wi-Fi環境がおすすめです。</div>
     </div>
     <div id="playerBox" class="hidden">
+      <div id="clipBox" class="hidden" style="margin-top:10px">
+        <div class="row"><span class="note">表示する動画 →</span><div class="seg" id="clipTabs"></div></div>
+        <p class="note" id="clipName" style="margin:4px 0 0"></p>
+      </div>
       <div class="row" style="margin-top:10px">
         <button class="btn" id="playBtn">▶ 再生</button>
         <div class="seg" id="segSpeed">
@@ -215,7 +220,9 @@ details{margin-top:8px}
         <span><i style="background:var(--down)"></i>ダウンスイング（振り下ろし）</span>
         <span><i style="background:var(--follow)"></i>フォロー</span>
         <span><i style="background:#ffd23f"></i>アドレス時の基準線</span>
+        <span><i style="border-top:3px dashed #fff;height:0;background:none;box-shadow:0 0 0 1px rgba(0,0,0,.5)"></i>お手本の通り道</span>
       </div>
+      <p class="note">※白の点線の「お手本の通り道」は、あなたの体格と選んだクラブに合わせて計算した目安です（後方：振り下ろしは振り上げより少し内側を通る／正面：肩を中心に円を描く）。</p>
       <p class="note">※線は「両手（グリップ）の通り道」です。クラブヘッドそのものはAIで検出できないため、手の軌道でスイング軌道を判定しています。</p>
     </div>
   </section>
@@ -273,6 +280,7 @@ details{margin-top:8px}
         <span><i style="background:#3ddc84"></i>今回（良い）</span>
         <span><i style="background:#ffb020"></i>今回（注意）</span>
         <span><i style="background:#ff5a46"></i>今回（要改善）</span>
+        <span><i style="border-top:3px dashed #fff;height:0;background:none;box-shadow:0 0 0 1px rgba(0,0,0,.5)"></i>お手本の通り道（スイング軌道の図）</span>
       </div>
       <div id="phases"></div>
     </section>
