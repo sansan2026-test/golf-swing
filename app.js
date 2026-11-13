@@ -863,24 +863,24 @@ function evalCore(saveHist) {
 
     // 正面の解説図
     const armAng = (f) => ({ i: f, ang: [J(sd.leadSh), J(sd.leadEl), J(sd.leadWr)] });
-    vz('スタンス幅', { i: a, seg: [[J(L.lAn), J(L.rAn)], SHL] });
-    vz('肩の傾き', { i: a, seg: [[J(sd.leadSh), J(sd.trailSh)]], hline: P(a, sd.leadSh) });
-    vz('三角形', armAng(tk));
-    vz('肩の回転（推定）', { i: tp, ref: a, seg: [SHL] });
-    vz('捻転差', { i: tp, ref: a, seg: [SHL, HIPL] });
-    vz('スウェー', { i: tp, ref: a, mark: [hipM], vline: hipM(a) });
-    vz('頭の横ブレ', { i: tp, ref: a, mark: [NOSE], vline: P(a, L.nose) });
-    vz(`トップでの${sd.leadName}腕`, armAng(tp));
-    vz('下半身リード', { i: ds, ref: tp, mark: [hipM], vline: hipM(tp) });
-    vz('胸の向き', { i: hw, ref: a, seg: [SHL] });
-    vz('腰の開き', { i: im, ref: a, seg: [HIPL] });
-    vz('体重移動', { i: im, ref: a, mark: [hipM], vline: hipM(a) });
-    vz('ビハインド', { i: im, ref: a, mark: [NOSE], vline: P(a, L.nose) });
-    vz(S.club === 'dr' ? '手元の位置（インパクト）' : 'ハンドファースト', { i: im, ref: a, mark: [hand], vline: hand(a) });
-    vz('チキンウィング', armAng(fo));
-    vz('振り切り', { i: fi, ref: a, seg: [SHL] });
-    vz(`${sd.leadName}足への乗り`, { i: fi, mark: [hipM], vline: P(fi, sd.leadAn) });
-    vz('かかとの上がり', { i: fi, seg: [[J(sd.trailHeel), J(sd.trailToe)]], hline: P(fi, sd.trailToe) });
+    vz('スタンス幅', { i: a, seg: [[J(L.lAn), J(L.rAn)], SHL], cap: `{C}の線＝構えた時の両足首の幅（下）と肩幅（上）。下の線が上の線の何倍の長さかを見ています。` });
+    vz('肩の傾き', { i: a, seg: [[J(sd.leadSh), J(sd.trailSh)]], hline: P(a, sd.leadSh), cap: `{C}の線＝構えた時の両肩を結んだ線、黄色の点線＝水平。${sd.trailName}肩が水平線より少し下がっているのが正しい構えです。` });
+    vz('三角形', { ...armAng(tk), cap: `{C}の線＝テークバックでの${sd.leadName}腕（肩→ひじ→手首）。ひじの所でまっすぐ伸びているほど「三角形」が保てています。` });
+    vz('肩の回転（推定）', { i: tp, ref: a, seg: [SHL], cap: `黄色の点線＝構えた時の肩のライン、{C}の線＝トップの肩のライン。肩が回るほど、正面からは線が短く見えます。` });
+    vz('捻転差', { i: tp, ref: a, seg: [SHL, HIPL], cap: `黄色の点線＝構えた時の肩（上）と腰（下）、{C}の線＝トップの肩と腰。肩の線が腰の線より短いほど、肩が腰より深く回っています（捻転差）。` });
+    vz('スウェー', { i: tp, ref: a, mark: [hipM], vline: hipM(a), cap: `黄色の縦線と点線の丸＝構えた時の腰、{C}の丸＝トップの腰。矢印が腰の横ズレです。` });
+    vz('頭の横ブレ', { i: tp, ref: a, mark: [NOSE], vline: P(a, L.nose), cap: `黄色の縦線と点線の丸＝構えた時の頭、{C}の丸＝トップの頭。矢印が頭の横ズレです。` });
+    vz(`トップでの${sd.leadName}腕`, { ...armAng(tp), cap: `{C}の線＝トップでの${sd.leadName}腕（肩→ひじ→手首）。ひじが曲がっているほど、手打ちでスイングが小さくなりやすいです。` });
+    vz('下半身リード', { i: ds, ref: tp, mark: [hipM], vline: hipM(tp), cap: `黄色の縦線と点線の丸＝トップの腰、{C}の丸＝振り下ろし途中の腰。矢印が、切り返しで腰が目標方向へ動いた量です。` });
+    vz('胸の向き', { i: hw, ref: a, seg: [SHL], cap: `黄色の点線＝構えた時の肩のライン、{C}の線＝手元が腰の高さに来た時の肩のライン。線が短いほど胸がまだ後ろを向いていて（理想）、構えた時と同じ長さに近いほど胸が早く開いています。` });
+    vz('腰の開き', { i: im, ref: a, seg: [HIPL], cap: `黄色の点線＝構えた時の腰のライン、{C}の線＝インパクトの腰のライン。線が短いほど、腰が目標方向へ回っています。` });
+    vz('体重移動', { i: im, ref: a, mark: [hipM], vline: hipM(a), cap: `黄色の縦線と点線の丸＝構えた時の腰、{C}の丸＝インパクトの腰。矢印が、腰が目標方向へ移った量です。` });
+    vz('ビハインド', { i: im, ref: a, mark: [NOSE], vline: P(a, L.nose), cap: `黄色の縦線と点線の丸＝構えた時の頭、{C}の丸＝インパクトの頭。丸が縦線より目標側に出ていると「突っ込み」です。` });
+    vz(S.club === 'dr' ? '手元の位置（インパクト）' : 'ハンドファースト', { i: im, ref: a, mark: [hand], vline: hand(a), cap: `黄色の縦線と点線の丸＝構えた時の手元、{C}の丸＝インパクトの手元。丸が縦線より目標側にあるほど、手元が先行しています。` });
+    vz('チキンウィング', { ...armAng(fo), cap: `{C}の線＝フォロー（手元が腰の高さ）での${sd.leadName}腕。ひじの所でまっすぐ伸びているのが理想で、曲がって外へ逃げているのがチキンウィングです。` });
+    vz('振り切り', { i: fi, ref: a, seg: [SHL], cap: `黄色の点線＝構えた時の肩のライン、{C}の線＝フィニッシュの肩のライン。線が短いほど、体がしっかり回り切っています。` });
+    vz(`${sd.leadName}足への乗り`, { i: fi, mark: [hipM], vline: P(fi, sd.leadAn), cap: `黄色の縦線＝フィニッシュでの${sd.leadName}足首、{C}の丸＝フィニッシュの腰。丸が縦線に近いほど、${sd.leadName}足に乗れています。` });
+    vz('かかとの上がり', { i: fi, seg: [[J(sd.trailHeel), J(sd.trailToe)]], hline: P(fi, sd.trailToe), cap: `{C}の線＝フィニッシュでの${sd.trailName}足（かかと→つま先）、黄色の点線＝つま先の高さ。かかとが点線より上がっているほど、${sd.trailName}足が使えています。` });
   } else {
     // ===== 後方から =====
     const fdir = Math.sign((P(a, L.lToe).x + P(a, L.rToe).x) - (P(a, L.lHeel).x + P(a, L.rHeel).x))
@@ -1027,19 +1027,19 @@ function evalCore(saveHist) {
 
     // 後方の解説図（名前が似ているので、長い名前から先に指定する）
     const spineLn = [hipM, shM];
-    vz('前傾角度のキープ（トップ）', { i: tp, ref: a, seg: [spineLn] });
-    vz('前傾角度のキープ（インパクト）', { i: im, ref: a, seg: [spineLn] });
-    vz('前傾角度', { i: a, seg: [spineLn], vline: hipM(a) });
-    vz('ひざの曲げ', { i: a, ang: [J(sd.trailHip), J(sd.trailKn), J(sd.trailAn)] });
-    vz('手の位置（腕の垂れ方）', { i: a, seg: [[shM, hand]], vline: shM(a) });
-    vz('テークバックの方向', { i: tk, ref: a, mark: [hand], vline: hand(a) });
-    vz('フライングエルボー', { i: tp, seg: [[J(sd.trailSh), J(sd.trailEl)]], hline: P(tp, sd.trailSh) });
-    vz('トップの手の位置', { i: tp, mark: [hand], vline: P(tp, sd.trailSh) });
-    vz('スイング軌道', { i: ds, path: true, mark: [hand], refPt: hand(bi) });
-    vz('頭の前後', { i: im, ref: a, mark: [NOSE], vline: P(a, L.nose) });
-    vz('腰の突っ込み', { i: im, ref: a, mark: [hipM], vline: hipM(a) });
-    vz('頭の高さ', { i: im, ref: a, mark: [NOSE], hline: P(a, L.nose) });
-    vz('高いフィニッシュ', { i: fi, mark: [hand], hline: shM(fi) });
+    vz('前傾角度のキープ（トップ）', { i: tp, ref: a, seg: [spineLn], cap: `黄色の点線＝構えた時の背中の線（腰→肩）、{C}の線＝トップの背中の線。2本が重なっているほど、前傾が保てています。` });
+    vz('前傾角度のキープ（インパクト）', { i: im, ref: a, seg: [spineLn], cap: `黄色の点線＝構えた時の背中の線（腰→肩）、{C}の線＝インパクトの背中の線。色の線が縦に起きているほど、上体が起き上がっています。` });
+    vz('前傾角度', { i: a, seg: [spineLn], vline: hipM(a), cap: `{C}の線＝構えた時の背中の線（腰→肩）、黄色の縦線＝真上の向き。2本の間の角度が前傾角度です。` });
+    vz('ひざの曲げ', { i: a, ang: [J(sd.trailHip), J(sd.trailKn), J(sd.trailAn)], cap: `{C}の線＝構えた時の${sd.trailName}脚（腰→ひざ→足首）。ひざの所の曲がり具合を見ています。` });
+    vz('手の位置（腕の垂れ方）', { i: a, seg: [[shM, hand]], vline: shM(a), cap: `{C}の線＝肩から手元まで、黄色の縦線＝肩の真下。手元が縦線のすぐ前（ボール側）にあるのが、腕が自然に垂れた位置です。` });
+    vz('テークバックの方向', { i: tk, ref: a, mark: [hand], vline: hand(a), cap: `黄色の縦線と点線の丸＝構えた時の手元、{C}の丸＝テークバックの手元。矢印が、手元が体側（内側）／ボール側（外側）へ動いた量です。` });
+    vz('フライングエルボー', { i: tp, seg: [[J(sd.trailSh), J(sd.trailEl)]], hline: P(tp, sd.trailSh), cap: `{C}の線＝トップでの${sd.trailName}上腕（肩→ひじ）、黄色の点線＝肩の高さ。ひじが肩の高さ近くまで上がって外へ浮いているとフライングエルボーです。` });
+    vz('トップの手の位置', { i: tp, mark: [hand], vline: P(tp, sd.trailSh), cap: `{C}の丸＝トップの手元、黄色の縦線＝${sd.trailName}肩の位置。丸が縦線の近くにあるのが理想で、ボール側に大きく出るとアップライト、背中側に入るとフラットです。` });
+    vz('スイング軌道', { i: ds, path: true, mark: [hand], refPt: hand(bi), refName: '比べる所', cap: `青の線＝振り上げ、赤の線＝振り下ろしの手元の通り道、白の点線＝お手本。黄色の点線の丸（比べる所）＝振り上げで同じ高さを通った所、{C}の丸＝振り下ろしの手元です。丸が矢印の向きにボール側（外側）へずれているほどアウトサイドイン、体側（内側）へずれているほどインサイドアウトです。` });
+    vz('頭の前後', { i: im, ref: a, mark: [NOSE], vline: P(a, L.nose), cap: `黄色の縦線と点線の丸＝構えた時の頭、{C}の丸＝インパクトの頭。ボール側に出ていると突っ込み、体側に引けているとのけぞりです。` });
+    vz('腰の突っ込み', { i: im, ref: a, mark: [hipM], vline: hipM(a), cap: `黄色の縦線と点線の丸＝構えた時の腰、{C}の丸＝インパクトの腰。腰がボール側に出ているほど、上体が起き上がる「アーリーエクステンション」です。` });
+    vz('頭の高さ', { i: im, ref: a, mark: [NOSE], hline: P(a, L.nose), cap: `黄色の横線と点線の丸＝構えた時の頭の高さ、{C}の丸＝インパクトの頭。上下に大きくずれているほど、頭が上下動しています。` });
+    vz('高いフィニッシュ', { i: fi, mark: [hand], hline: shM(fi), cap: `{C}の丸＝フィニッシュの手元、黄色の点線＝肩の高さ。手元が点線より高いほど、大きく振り抜けています。` });
   }
 
   // フィニッシュのバランス（共通）：止まってからの体の揺れ
@@ -1059,7 +1059,7 @@ function evalCore(saveHist) {
     add('finish', { name: 'フィニッシュのバランス', status: 'na', value: '動画がフィニッシュ直後で終わっているため判定できません', ideal: '振り終わった後も1〜2秒撮影する', about: '', fix: '次回はフィニッシュの後も2秒ほど撮り続けてください。', drill: '' });
   }
 
-  vz('フィニッシュのバランス', { i: end, ref: fi, mark: [hipM, NOSE] });
+  vz('フィニッシュのバランス', { i: end, ref: fi, mark: [hipM, NOSE], refName: 'フィニッシュ直後', cap: `黄色の点線の丸＝フィニッシュした瞬間の頭と腰、{C}の丸＝約0.6秒後。丸が離れているほど、フィニッシュでふらついています。` });
   S.checks = C;
   const scored = C.filter((c) => c.status !== 'na');
   S.score = calcScore(scored.map((c) => ({ name: c.name, st: c.status })));
@@ -1072,6 +1072,16 @@ function evalCore(saveHist) {
 // ---------- 結果の表示 ----------
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const BADGE = { good: '良い', warn: '注意', bad: '要改善', na: '判定不可' };
+// 図の見方の文：{C} を判定の色の名前にし、図と同じ色で表示する
+const CAP_COL = { good: ['緑', '#1f9d57'], warn: ['オレンジ', '#d48806'], bad: ['赤', '#e0442f'] };
+function capHtml(c) {
+  const [nm, col] = CAP_COL[c.status] || ['色付き', 'inherit'];
+  return esc(c.viz.cap)
+    .replace(/\{C\}/g, `<b style="color:${col}">${nm}</b>`)
+    .replace(/黄色/g, '<b style="color:#c9a100">黄色</b>')
+    .replace(/白の点線/g, '<b>白の点線</b>')
+    .replace(/青の線/g, '<b style="color:#2f8cff">青の線</b>');
+}
 
 function render(back, down, ratio) {
   $('#scoreNum').innerHTML = `${S.score}<small>/100</small>`;
@@ -1115,6 +1125,7 @@ function render(back, down, ratio) {
       <p class="desc">${p.desc}</p>
       ${cs.length ? cs.map((c) => `<div class="check">${c.viz ? `<canvas class="vz" data-ci="${S.checks.indexOf(c)}" title="タップでこの場面へ"></canvas>` : ''}<div class="hd"><b>${S.multi && S.multi.mixed && c.multi ? `<span class="note" style="font-weight:400">［${c.multi.views.length > 1 ? '正面・後方' : c.multi.views[0] === 'fo' ? '正面' : '後方'}］</span>` : ''}${esc(c.name)}</b><span class="badge ${c.status}">${BADGE[c.status]}</span></div>${c.link ? `<p class="note" style="margin:2px 0;color:var(--text)">🔗 ${esc(c.link)}</p>` : ''}${c.multi ? `<p class="note" style="margin:2px 0">${c.multi.n}本の内訳：良い ${c.multi.cnt.good}・注意 ${c.multi.cnt.warn}・要改善 ${c.multi.cnt.bad}${c.multi.cnt.bad + c.multi.cnt.warn === c.multi.n && c.multi.n > 1 ? '（毎回出ている課題）' : ''}</p>` : ''}
         <div class="val">${esc(c.value)}<br><span>目安：${esc(c.ideal)}</span></div>
+        ${c.viz && c.viz.cap ? `<p class="vzcap"><b>図の見方：</b>${capHtml(c)}</p>` : ''}
         ${c.about ? `<p><span class="lbl">ここを見ています：</span>${esc(c.about)}</p>` : ''}
         <p><span class="lbl">アドバイス：</span>${esc(c.fix)}</p>
         ${c.drill && c.status !== 'good' ? `<p><span class="lbl">練習法：</span>${esc(c.drill)}</p>` : ''}</div>`).join('')
@@ -1266,6 +1277,57 @@ function paintViz(cv, c, img) {
   (v.seg || []).forEach(([p, q]) => line(p(v.i), q(v.i), COL, false, 4));
   if (v.ang) { const [p, q, r] = v.ang.map((fn) => fn(v.i)); line(p, q, COL, false, 4); line(q, r, COL, false, 4); dot(q, COL, 6); }
   (v.mark || []).forEach((m) => dot(m(v.i), COL, 7));
+  // 名札：黒い下地の上に文字（小さく表示されても読めるよう大きめ）
+  const placed = [];
+  const tag = (p, text, color, dx = 10, dy = -10) => {
+    const a = T(p);
+    cx.save(); cx.font = 'bold 21px sans-serif';
+    const tw = cx.measureText(text).width, bw2 = tw + 12, bh2 = 28;
+    let x = Math.min(Math.max(4, a.x + dx), outW - bw2 - 4), y = Math.min(Math.max(4, a.y + dy - bh2 / 2), outH - bh2 - 4);
+    // 先に置いた名札と重なったら、下へずらす（下が無理なら上へ）
+    const hit = () => placed.some((r) => x < r.x + r.w && r.x < x + bw2 && y < r.y + r.h && r.y < y + bh2);
+    for (let k = 0; k < 8 && hit(); k++) y = y + bh2 + 4 > outH - bh2 - 4 ? Math.max(4, y - (bh2 + 4) * (k + 1)) : y + bh2 + 4;
+    placed.push({ x, y, w: bw2, h: bh2 });
+    cx.fillStyle = 'rgba(0,0,0,0.72)'; cx.fillRect(x, y, bw2, bh2);
+    cx.fillStyle = color; cx.textBaseline = 'middle'; cx.fillText(text, x + 6, y + bh2 / 2 + 1);
+    cx.restore();
+  };
+  // ズレの矢印：基準（黄色の点線の丸）→ 今回（判定の色の丸）
+  const from = v.refPt || (v.ref != null && v.mark ? v.mark[0](v.ref) : null);
+  if (from && v.mark) {
+    const to = v.mark[0](v.i), A = T(from), B = T(to);
+    const d = v.vline || v.path ? Math.abs(to.x - from.x) : v.hline ? Math.abs(to.y - from.y) : dist(from, to);
+    const len = cm(d / bodyScale(S.ph.address));
+    if (Math.hypot(B.x - A.x, B.y - A.y) > 12 && len >= 1) {
+      const ang = Math.atan2(B.y - A.y, B.x - A.x), hl = 12;
+      cx.save(); cx.strokeStyle = '#fff'; cx.fillStyle = '#fff'; cx.lineWidth = 3;
+      cx.beginPath(); cx.moveTo(A.x, A.y); cx.lineTo(B.x - Math.cos(ang) * 8, B.y - Math.sin(ang) * 8); cx.stroke();
+      cx.beginPath(); cx.moveTo(B.x - Math.cos(ang) * 6, B.y - Math.sin(ang) * 6);
+      cx.lineTo(B.x - Math.cos(ang - 0.45) * (hl + 6), B.y - Math.sin(ang - 0.45) * (hl + 6));
+      cx.lineTo(B.x - Math.cos(ang + 0.45) * (hl + 6), B.y - Math.sin(ang + 0.45) * (hl + 6)); cx.closePath(); cx.fill();
+      cx.restore();
+      tag({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, `約${len}cm`, '#fff', 12, 22);
+    }
+  }
+  if (v.ref != null || v.refPt) tag(from || (v.seg ? v.seg[0][0](v.ref) : v.mark ? v.mark[0](v.ref) : P(v.ref, 0)), v.refName || phaseAt(v.ref != null ? v.ref : -1), GH, -10, -26);
+  if (v.path) {
+    const mid = (arr) => arr[Math.floor(arr.length / 2)];
+    tag(hand(Math.round((S.ph.start + S.ph.top) / 2)), '振り上げ', '#7fb6ff', 12, 0);
+    tag(hand(Math.round((S.ph.top + v.i) / 2)), '振り下ろし', '#ff8a70', 12, 0);
+    if (ideal && ideal.down.length) tag(mid(ideal.down), 'お手本', '#fff', -110, 0);
+  }
+}
+
+// コマの番号から、その場面の名前（図の名札用）
+function phaseAt(i) {
+  const ph = S.ph;
+  if (i === ph.address) return '構え';
+  if (i === ph.top) return 'トップ';
+  if (i === ph.impact) return 'インパクト';
+  if (i === ph.finish) return 'フィニッシュ';
+  if (i === ph.takeaway) return 'テークバック';
+  if (i === ph.downswing) return 'ダウンスイング';
+  return i < ph.top ? '振り上げ' : i < ph.impact ? '振り下ろし' : 'フォロー';
 }
 
 async function jumpFrame(i) {
@@ -1624,6 +1686,7 @@ function renderGrowth() {
   $('#growthTitle').textContent = `📈 成長の記録（${p.name}）`;
   const all = sorted(hist(p.id));
   renderHistory(p.id, all);
+  renderTraits(p, all);
   if (!gView) gView = all.length ? all[all.length - 1].view : 'fo';
   if (!gClub) gClub = all.length ? clubOf(all[all.length - 1]) : S.club;
   paintGView(gView);
@@ -1641,6 +1704,84 @@ function renderGrowth() {
     html += habits(list);
   }
   box.innerHTML = html;
+}
+
+// ---------- スイングの特徴（全部の記録から、クセ・直ってきた所・長所をまとめる） ----------
+// 角度ごとに分ける（正面と後方で判定項目が違うため）。クラブは問わない（判定はクラブ別の基準で出しているので比べられる）。
+const RECENT_N = 3;
+let tView = null;
+function traitsOf(list) {
+  const recs = list.filter((r) => r.checks && r.checks.length);
+  const series = new Map(); // 項目名 → [{st, v, at}]（古い順）
+  for (const r of recs) for (const c of r.checks) {
+    if (!(c.st in PT)) continue;
+    if (!series.has(c.name)) series.set(c.name, []);
+    series.get(c.name).push({ st: c.st, v: c.v, at: r.at });
+  }
+  const avg = (a) => (a.length ? a.reduce((t, x) => t + PT[x.st], 0) / a.length : null);
+  const out = { habit: [], fixed: [], newIssue: [], strong: [], n: recs.length };
+  for (const [name, a] of series) {
+    const n = a.length, issues = a.filter((x) => x.st !== 'good').length;
+    const k = Math.min(RECENT_N, Math.floor(n / 2));
+    const recent = a.slice(n - Math.max(1, k)), early = a.slice(0, n - Math.max(1, k));
+    const ra = avg(recent), ea = avg(early);
+    const it = { name, a, n, issues, good: n - issues, w: weightOf(name), first: a[0], last: a[n - 1], recentN: recent.length, earlyN: early.length };
+    if (n >= 4 && ea <= 50 && ra > 75) out.fixed.push(it);
+    else if (n >= 4 && ea > 75 && ra <= 50) out.newIssue.push(it);
+    else if (n >= 2 && issues / n >= 0.6 && ra <= 50) out.habit.push(it);
+    else if (n >= 3 && (n - issues) / n >= 0.8 && ra > 75) out.strong.push(it);
+  }
+  const by = (x, y) => y.w - x.w || y.issues / y.n - x.issues / x.n;
+  out.habit.sort(by); out.newIssue.sort(by); out.fixed.sort((x, y) => y.w - x.w); out.strong.sort((x, y) => y.w - x.w || y.good / y.n - x.good / x.n);
+  // 今いちばん気にするポイント：クセと最近出てきた課題のうち、球筋への影響が一番大きい項目
+  out.focus = [...out.habit, ...out.newIssue].sort(by)[0] || null;
+  const sc = recs.map((r) => r.score);
+  const k3 = Math.min(RECENT_N, Math.floor(sc.length / 2)) || 1;
+  out.firstAvg = Math.round(sc.slice(0, k3).reduce((t, x) => t + x, 0) / k3);
+  out.lastAvg = Math.round(sc.slice(-k3).reduce((t, x) => t + x, 0) / k3);
+  out.best = Math.max(...sc);
+  out.k3 = k3;
+  out.from = recs.length ? recs[0].at : null; out.to = recs.length ? recs[recs.length - 1].at : null;
+  return out;
+}
+
+function renderTraits(p, all) {
+  const box = $('#traits');
+  if (!box) return;
+  const byV = { fo: all.filter((r) => r.view === 'fo'), dtl: all.filter((r) => r.view === 'dtl') };
+  const usable = (v) => byV[v].filter((r) => r.checks && r.checks.length).length;
+  if (!tView || !usable(tView)) tView = usable(gView || 'fo') ? (gView || 'fo') : usable('fo') ? 'fo' : 'dtl';
+  const vn = (v) => (v === 'fo' ? '正面' : '後方');
+  const nAll = usable('fo') + usable('dtl');
+  if (nAll < 3) {
+    box.innerHTML = `<div class="tr-card"><p class="tr-title">${esc(p.name)}のスイングの特徴</p><p class="note" style="margin:4px 0 0">あと${3 - nAll}回解析すると、よく出るクセや直ってきた所をここにまとめます（正面・後方それぞれ3回以上あると、より正確になります）。</p></div>`;
+    return;
+  }
+  const T = traitsOf(byV[tView]);
+  const dots = (a) => `<span class="tr-dots">${a.slice(-12).map((x) => `<i class="tr-d ${x.st}"></i>`).join('')}</span>`;
+  const short = (n) => n.replace(/（.*?）/g, '');
+  const row = (it, sub) => `<div class="tr-row"><span>${esc(it.name)}</span>${dots(it.a)}<span class="tr-sub">${sub}</span></div>`;
+  const sec = (cls, icon, title, items, fn, empty) => `<div class="tr-sec"><p class="tr-h ${cls}">${icon} ${title}</p>${items.length ? items.slice(0, 4).map(fn).join('') : `<p class="note" style="margin:0">${empty}</p>`}</div>`;
+  const other = tView === 'fo' ? 'dtl' : 'fo';
+  const focusOf = (v) => { const t = usable(v) >= 2 ? traitsOf(byV[v]) : null; return t && t.focus ? `${vn(v)}：${esc(t.focus.name)}` : ''; };
+  const focus = [focusOf('fo'), focusOf('dtl')].filter(Boolean).join('　／　');
+  const diff = T.lastAvg - T.firstAvg;
+  box.innerHTML = `<div class="tr-card">
+    <div class="tr-top"><p class="tr-title">${esc(p.name)}のスイングの特徴</p><span class="note">${vn(tView)}の記録${T.n}回・${fmtDay(T.from)}〜${fmtDay(T.to)}・全クラブ</span></div>
+    <div class="tr-stats">
+      <div><span>はじめ${T.k3}回の平均</span><b>${T.firstAvg}点</b></div>
+      <div><span>最近${T.k3}回の平均</span><b>${T.lastAvg}点 <small class="${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '+' : ''}${diff}</small></b></div>
+      <div><span>最高点</span><b>${T.best}点</b></div>
+    </div>
+    ${focus ? `<div class="tr-focus"><b>🎯 今いちばん気にするポイント</b><br>${focus}</div>` : ''}
+    <div class="seg" id="segTView" style="margin-top:10px">${['fo', 'dtl'].map((v) => `<button data-v="${v}" class="${v === tView ? 'on' : ''}">${vn(v)}（${usable(v)}回）</button>`).join('')}</div>
+    ${sec('bad', '🔁', 'いつも出ている課題（クセ）', T.habit, (it) => row(it, `${it.n}回中${it.issues}回で注意以上。最新：${esc(it.last.v || '')}`), 'いつも出ている課題はありません。')}
+    ${sec('good', '📈', '直ってきたところ', T.fixed, (it) => row(it, `はじめの${it.earlyN}回は注意以上が多め → 最近${it.recentN}回は良い。はじめ：${esc(it.first.v || '')} → 最新：${esc(it.last.v || '')}`), T.n >= 4 ? 'まだありません。課題に取り組むと、ここに出てきます。' : 'もう少し記録が増えると表示されます。')}
+    ${sec('warn', '⚠️', '最近出てきた課題', T.newIssue, (it) => row(it, `前は良い判定が多かった → 最近${it.recentN}回は注意以上。最新：${esc(it.last.v || '')}`), 'ありません。')}
+    <div class="tr-sec"><p class="tr-h">⭐ 安定している長所</p>${T.strong.length ? `<div class="tr-pills">${T.strong.slice(0, 6).map((it) => `<span>${esc(short(it.name))} ${it.good}/${it.n}</span>`).join('')}</div>` : '<p class="note" style="margin:0">まだありません。</p>'}</div>
+    <p class="note tr-legend"><i class="tr-d good"></i>良い <i class="tr-d warn"></i>注意 <i class="tr-d bad"></i>要改善　左が古い記録、右が最新${usable(other) ? '' : `（${vn(other)}から撮った記録があると、${vn(other)}の特徴も見られます）`}</p>
+  </div>`;
+  $$('#segTView button').forEach((b) => b.addEventListener('click', () => { tView = b.dataset.v; renderTraits(p, all); }));
 }
 
 // スコアの推移グラフ
@@ -1937,7 +2078,7 @@ $('#syncLogin').addEventListener('click', async () => {
 });
 $('#syncLogout').addEventListener('click', async () => { await SYNC.remote.logout(); });
 
-const APP_VER = '2026-11-13d';
+const APP_VER = '2026-11-13e';
 $('#appVer').textContent = `バージョン ${APP_VER}（複数の動画・正面＋後方のまとめ解析に対応）`;
 migrateScores();
 applyProfile();
