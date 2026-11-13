@@ -1476,7 +1476,7 @@ function profiles() {
   if (!ps || !ps.length) {
     // 初回：以前の設定と記録を「わたし」に引き継ぐ
     ps = [{ id: newId('p'), name: 'わたし', hand: store.get('hand', 'R'), height: store.get('height', 170) }];
-    store.set('profiles', ps);
+    store.set('profiles', ps); // 初回の自動作成は同期しない（別の端末の「わたし」と重ならないように）
     store.set('cur', ps[0].id);
     const old = store.get('history', null);
     if (old && old.length) store.set('hist.' + ps[0].id, old.map((r) => ({ id: newId('h'), checks: [], ...r })));
@@ -1485,7 +1485,8 @@ function profiles() {
 }
 const curProfile = () => { const ps = profiles(); return ps.find((p) => p.id === store.get('cur', '')) || ps[0]; };
 const hist = (pid) => store.get('hist.' + pid, []);
-const setHist = (pid, h) => store.set('hist.' + pid, h);
+const setHist = (pid, h) => { store.set('hist.' + pid, h); syncSoon(); };
+const saveProfiles = (ps) => { store.set('profiles', ps); syncSoon(); };
 const sorted = (h) => h.slice().sort((a, b) => (a.at < b.at ? -1 : 1));
 
 function applyProfile() {
@@ -1547,11 +1548,11 @@ $('#pfSave').addEventListener('click', () => {
   closeForm();
   if (mode === 'add') {
     const p = { id: newId('p'), name, hand: formHand, height: h };
-    ps.push(p); store.set('profiles', ps); gView = null; gClub = null;
+    ps.push(p); saveProfiles(ps); gView = null; gClub = null;
     switchTo(p.id);
   } else {
     Object.assign(ps.find((x) => x.id === curProfile().id), { name, hand: formHand, height: h });
-    store.set('profiles', ps);
+    saveProfiles(ps);
     applyProfile();
     if (S.analyzed) evaluate(); else renderGrowth();
   }
@@ -1562,8 +1563,8 @@ $('#pfDelete').addEventListener('click', () => {
     <div class="row" style="margin-top:6px"><button class="btn small" id="pfDelYes">削除する</button><button class="btn small" id="pfDelNo">やめる</button></div></div>`;
   $('#pfDelYes').addEventListener('click', () => {
     const ps = profiles().filter((x) => x.id !== p.id);
-    store.set('profiles', ps);
     try { localStorage.removeItem('swing.hist.' + p.id); } catch { /* 無視 */ }
+    saveProfiles(ps);
     store.set('cur', ps[0].id); gView = null; gClub = null;
     closeForm(); closeResults(); applyProfile(); renderGrowth();
   });
@@ -1757,7 +1758,7 @@ $('#importFile').addEventListener('change', async (e) => {
       }
       setHist(p.id, h);
     }
-    store.set('profiles', ps);
+    saveProfiles(ps);
     applyProfile(); renderGrowth();
     $('#backupMsg').textContent = `読み込みました：プレーヤー${addedP}人・記録${addedH}件を追加（重複分は除外）。`;
   } catch (err) {
@@ -1778,11 +1779,170 @@ function migrateScores() {
     if (changed) setHist(p.id, h);
   }
 }
-const APP_VER = '2026-11-13b';
+// ---------- 記録の同期（Firebase） ----------
+// 記録は今まで通り端末内に保存し、ログイン中はGoogleアカウントにひも付けて Firebase にも保存する。
+// 保存するのはプレーヤー設定と解析の記録（点数・判定・数値）だけで、動画は送らない。
+// Firebaseの中の形：users/{ログインした人}/hist/{記録ID} ＝ { pid, r:記録 } または { deleted:true }（削除の印）
+//                   users/{ログインした人}/meta/profiles ＝ { list:プレーヤー一覧, deleted:削除したプレーヤーID }
+const SYNC = { remote: null, user: null, ready: false, unsub: null, cache: new Map(), meta: undefined, remoteHist: undefined, metaJs: '', metaDel: [], timer: 0, err: '' };
+// キーの順番に左右されない文字列化（Firebaseはキーを並べ替えて返すため）
+const stable = (v) => (Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => JSON.stringify(k) + ':' + stable(v[k])).join(',')}}` : JSON.stringify(v));
+const clean = (v) => JSON.parse(JSON.stringify(v)); // Firebaseが受け付けない undefined を取り除く
+
+function syncSoon() {
+  try { if (!SYNC.ready) return; } catch { return; } // 起動途中（同期の準備前）に記録が保存された時
+  clearTimeout(SYNC.timer);
+  SYNC.timer = setTimeout(() => { syncPush().catch(syncError); }, 600);
+}
+function syncError(e) {
+  console.error(e);
+  SYNC.err = (e && e.code === 'permission-denied') ? 'Firebaseの読み書きが許可されていません（ルールの設定を確認してください）' : '同期でエラーが起きました：' + ((e && (e.code || e.message)) || e);
+  renderSync();
+}
+
+// 端末内の記録と、最後に確認した Firebase の中身を比べて、違う所だけ送る
+async function syncPush() {
+  if (!SYNC.ready || !SYNC.user) return;
+  const R = SYNC.remote, uid = SYNC.user.uid, u = Date.now(), jobs = [];
+  const ps = profiles();
+  const local = new Map();
+  for (const p of ps) for (const r of hist(p.id)) local.set(r.id, { pid: p.id, r });
+  for (const [id, v] of local) {
+    const js = stable(v);
+    if (SYNC.cache.get(id) !== js) { SYNC.cache.set(id, js); jobs.push(R.put(uid, id, { pid: v.pid, r: clean(v.r), u })); }
+  }
+  for (const [id, js] of SYNC.cache) {
+    if (js !== 'DEL' && !local.has(id)) { SYNC.cache.set(id, 'DEL'); jobs.push(R.put(uid, id, { deleted: true, u })); }
+  }
+  const known = SYNC.metaJs ? JSON.parse(SYNC.metaJs) : [];
+  const del = [...new Set([...SYNC.metaDel, ...known.map((p) => p.id).filter((id) => !ps.find((p) => p.id === id))])];
+  const mj = stable(ps);
+  if (mj !== SYNC.metaJs || del.length !== SYNC.metaDel.length) {
+    SYNC.metaJs = mj; SYNC.metaDel = del;
+    jobs.push(R.putMeta(uid, { list: clean(ps), deleted: del, u }));
+  }
+  if (jobs.length) { await Promise.all(jobs); }
+  SYNC.err = ''; renderSync();
+}
+
+// Firebase の中身を端末内に取り込む（新しく受け取るたびに呼ばれる）
+function applyRemote() {
+  if (SYNC.meta === undefined || SYNC.remoteHist === undefined) return; // 両方そろってから
+  const meta = SYNC.meta || { list: [], deleted: [] };
+  const delP = new Set(meta.deleted || []);
+  let ps = profiles();
+  // 初めて同期する時：この端末で自動で作られただけの空の「わたし」は、すでに同期されているプレーヤーがいれば取り除く
+  if (!SYNC.ready && (meta.list || []).length) {
+    ps = ps.filter((p) => !(p.name === 'わたし' && !hist(p.id).length && !meta.list.find((x) => x.id === p.id)));
+  }
+  for (const rp of meta.list || []) { const i = ps.findIndex((p) => p.id === rp.id); if (i >= 0) ps[i] = { ...ps[i], ...rp }; else ps.push(rp); }
+  for (const p of ps.filter((x) => delP.has(x.id))) { try { localStorage.removeItem('swing.hist.' + p.id); } catch { /* 無視 */ } }
+  ps = ps.filter((p) => !delP.has(p.id));
+  if (!ps.length) ps = [{ id: newId('p'), name: 'わたし', hand: 'R', height: 170 }];
+  store.set('profiles', ps);
+  if (!ps.find((p) => p.id === store.get('cur', ''))) store.set('cur', ps[0].id);
+  SYNC.metaJs = stable(meta.list || []); SYNC.metaDel = [...delP];
+  const byPid = Object.fromEntries(ps.map((p) => [p.id, hist(p.id)]));
+  for (const d of SYNC.remoteHist) {
+    if (d.deleted) {
+      for (const pid of Object.keys(byPid)) byPid[pid] = byPid[pid].filter((r) => r.id !== d.id);
+      if (S.entry && S.entry.id === d.id) S.entry = { discarded: true };
+      SYNC.cache.set(d.id, 'DEL');
+      continue;
+    }
+    const arr = byPid[d.pid];
+    if (!arr || !d.r) continue;
+    const rjs = stable({ pid: d.pid, r: d.r });
+    const i = arr.findIndex((r) => r.id === d.id);
+    const ljs = i >= 0 ? stable({ pid: d.pid, r: arr[i] }) : null;
+    // この端末でまだ送っていない変更がある時は、端末の方を残す（このあと送る）
+    const pending = ljs && ljs !== rjs && SYNC.cache.get(d.id) === rjs;
+    if (!pending) { if (i >= 0) arr[i] = d.r; else arr.push(d.r); }
+    SYNC.cache.set(d.id, rjs);
+  }
+  for (const [pid, arr] of Object.entries(byPid)) store.set('hist.' + pid, arr);
+  SYNC.ready = true;
+  applyProfile(); renderGrowth(); renderSync();
+  syncPush().catch(syncError); // この端末にしか無い記録を送る
+}
+
+function startSync(user) {
+  if (SYNC.unsub) { SYNC.unsub(); SYNC.unsub = null; }
+  SYNC.user = user; SYNC.ready = false; SYNC.cache = new Map(); SYNC.meta = undefined; SYNC.remoteHist = undefined; SYNC.metaJs = ''; SYNC.metaDel = [];
+  renderSync();
+  if (!user) return;
+  SYNC.unsub = SYNC.remote.subscribe(user.uid, (part) => {
+    if ('hist' in part) SYNC.remoteHist = part.hist;
+    if ('meta' in part) SYNC.meta = part.meta;
+    try { applyRemote(); } catch (e) { syncError(e); }
+  }, syncError);
+}
+
+function renderSync() {
+  const st = $('#syncStatus'), inB = $('#syncLogin'), outB = $('#syncLogout');
+  if (!st) return;
+  if (!SYNC.remote) {
+    st.textContent = window.FIREBASE_CONFIG ? '同期の準備中…' : '同期はまだ設定されていません（記録はこの端末だけに保存されます）。';
+    inB.classList.add('hidden'); outB.classList.add('hidden');
+    return;
+  }
+  if (!SYNC.user) {
+    st.textContent = 'Googleでログインすると、iPhoneとPCなど別の端末でも同じ記録を見られます。';
+    inB.classList.remove('hidden'); outB.classList.add('hidden');
+  } else {
+    const n = profiles().reduce((t, p) => t + hist(p.id).length, 0);
+    st.textContent = SYNC.ready ? `☁️ 同期中：${SYNC.user.name}（プレーヤー${profiles().length}人・記録${n}件）` : `☁️ ${SYNC.user.name} の記録を読み込み中…`;
+    inB.classList.add('hidden'); outB.classList.remove('hidden');
+  }
+  if (SYNC.err) st.textContent += '　⚠️ ' + SYNC.err;
+}
+
+// Firebase の部品を読み込む（設定が無ければ同期は使わない）
+const FB_VER = '10.12.2';
+async function firebaseRemote(cfg) {
+  const base = `https://www.gstatic.com/firebasejs/${FB_VER}`;
+  const [A, AU, F] = await Promise.all([import(`${base}/firebase-app.js`), import(`${base}/firebase-auth.js`), import(`${base}/firebase-firestore.js`)]);
+  const app = A.initializeApp(cfg);
+  const auth = AU.getAuth(app), db = F.getFirestore(app);
+  return {
+    onUser(cb) { AU.onAuthStateChanged(auth, (u) => cb(u ? { uid: u.uid, name: u.displayName || u.email || 'ログイン中' } : null)); },
+    async login() {
+      const pr = new AU.GoogleAuthProvider();
+      try { await AU.signInWithPopup(auth, pr); } catch (e) {
+        // ポップアップが使えない環境（ホーム画面から開いた時など）は、画面を切り替えてログイン
+        if (/popup-blocked|operation-not-supported|cancelled-popup/.test(e.code || '')) await AU.signInWithRedirect(auth, pr); else throw e;
+      }
+    },
+    logout: () => AU.signOut(auth),
+    subscribe(uid, cb, onErr) {
+      const a = F.onSnapshot(F.collection(db, 'users', uid, 'hist'), (q) => cb({ hist: q.docs.map((d) => ({ id: d.id, ...d.data() })) }), onErr);
+      const b = F.onSnapshot(F.doc(db, 'users', uid, 'meta', 'profiles'), (d) => cb({ meta: d.exists() ? d.data() : null }), onErr);
+      return () => { a(); b(); };
+    },
+    put: (uid, id, data) => F.setDoc(F.doc(db, 'users', uid, 'hist', id), data),
+    putMeta: (uid, data) => F.setDoc(F.doc(db, 'users', uid, 'meta', 'profiles'), data),
+  };
+}
+async function initSync() {
+  renderSync();
+  try {
+    SYNC.remote = window.__SYNC_REMOTE || (window.FIREBASE_CONFIG ? await firebaseRemote(window.FIREBASE_CONFIG) : null);
+  } catch (e) { SYNC.remote = null; SYNC.err = '同期の部品を読み込めませんでした（通信環境を確認してください）'; console.error(e); }
+  renderSync();
+  if (!SYNC.remote) return;
+  SYNC.remote.onUser((u) => startSync(u));
+}
+$('#syncLogin').addEventListener('click', async () => {
+  try { SYNC.err = ''; await SYNC.remote.login(); } catch (e) { if (!/popup-closed/.test((e && e.code) || '')) syncError(e); }
+});
+$('#syncLogout').addEventListener('click', async () => { await SYNC.remote.logout(); });
+
+const APP_VER = '2026-11-13c';
 $('#appVer').textContent = `バージョン ${APP_VER}（複数の動画・正面＋後方のまとめ解析に対応）`;
 migrateScores();
 applyProfile();
 renderGrowth();
+initSync();
 
 // ---------- 用語集 ----------
 const GLOSS = [

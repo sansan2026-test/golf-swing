@@ -289,7 +289,8 @@ details{margin-top:8px}
 
   <section class="card" id="growthCard">
     <h2 id="growthTitle">📈 成長の記録</h2>
-    <p class="note">解析するたびに自動で記録され、同じ角度・同じクラブどうし（例：正面のドライバーどうし）で比べます。記録はこの端末のブラウザ内にだけ保存されます（GitHubやClaudeには送られません）。</p>
+    <p class="note">解析するたびに自動で記録され、同じ角度・同じクラブどうし（例：正面のドライバーどうし）で比べます。記録はこの端末のブラウザ内に保存されます。下の「Googleでログイン」をすると、記録（点数・判定・数値。<b>動画は含みません</b>）があなたのGoogleアカウントにひも付けて保存され、iPhoneとPCなど別の端末でも見られます（あなた以外は読めません。GitHubやClaudeには送られません）。</p>
+    <div class="row" id="syncBox" style="margin:4px 0 8px"><span class="note" id="syncStatus"></span><button class="btn small hidden" id="syncLogin">Googleでログインして同期</button><button class="btn small hidden" id="syncLogout">ログアウト</button></div>
     <div class="row">
       <div class="seg" id="segGView"><button data-v="fo">正面</button><button data-v="dtl">後方</button></div>
       <div class="seg" id="segGClub"></div>
@@ -359,6 +360,7 @@ details{margin-top:8px}
   </section>
 </main>
 <p class="note" id="appVer" style="text-align:center;margin:16px 0">バージョン：確認中（この表示のままなら、古いプログラムが残っています。ページを再読み込みしてください）</p>
-<script type="module" src="app.js?v=20261113b"></script>
+<script src="firebase-config.js?v=20261113c"></script>
+<script type="module" src="app.js?v=20261113c"></script>
 </body>
 </html>
