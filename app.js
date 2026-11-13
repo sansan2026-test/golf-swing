@@ -10,7 +10,7 @@ const store = {
 };
 
 const S = {
-  viewPref: 'auto', hand: 'R', heightCm: 170, entry: null,
+  viewPref: 'auto', club: store.get('club', 'dr'), hand: 'R', heightCm: 170, entry: null,
   frames: [], n: 0, dt: 1 / 30, W: 0, H: 0, vw: 0, vh: 0,
   view: null, autoView: null, ph: null, checks: [], score: 0,
   skel: true, path: true, ref: true, rate: 0.25, analyzed: false, fileName: '',
@@ -24,6 +24,79 @@ const PHASES = [
   { key: 'impact', name: 'インパクト', desc: 'インパクト＝ボールに当たる瞬間。アドレスの形に近く、体重が目標側に乗っているのが理想です。' },
   { key: 'finish', name: 'フィニッシュ', desc: 'フィニッシュ＝振り切った最後の姿勢。ここでバランス良く止まれるかで、スイング全体の良し悪しが分かります。' },
 ];
+
+// ---------- クラブ別の判定基準 ----------
+// クラブが長いほど：スタンス広め・前傾浅め・ボールから遠め・トップはフラット・
+// インパクトは頭をより後ろに残し、ハンドファーストは弱め（ドライバーはアッパーに打つ）。
+// [良いの範囲, 注意の範囲, 目安の文] — 範囲外は「要改善」
+const CLUB_NAME = { dr: 'ドライバー', fw: 'FW・UT', ir: 'アイアン', wg: 'ウェッジ' };
+const clubName = (c) => CLUB_NAME[c] || 'クラブ未設定';
+const CRIT = {
+  // 正面：両足首の間隔 ÷ 肩幅
+  stance: {
+    dr: [[1.15, 1.8], [0.95, 2.05], '肩幅の約1.2〜1.6倍（広めに構えて大きな回転を支える）'],
+    fw: [[1.0, 1.65], [0.85, 1.9], '肩幅の約1.0〜1.5倍'],
+    ir: [[0.85, 1.45], [0.7, 1.7], '肩幅くらい（約0.9〜1.3倍）'],
+    wg: [[0.7, 1.25], [0.55, 1.5], '肩幅よりやや狭め（約0.8〜1.1倍）'],
+  },
+  // 正面：構えでの肩の傾き（後ろ側の肩が下がる角度）
+  tilt: {
+    dr: [[7, 20], [3, 25], '約8〜18°（ボールを左足寄りに置くぶん、傾きは大きめ）'],
+    fw: [[5, 17], [1, 22], '約6〜15°'],
+    ir: [[2, 14], [-1, 20], '約5〜12°'],
+    wg: [[0, 10], [-3, 15], '約2〜8°（ほぼ水平に近い）'],
+  },
+  // 正面：インパクトでの腰の移動（目標方向が＋、身長比）
+  shift: {
+    dr: [[0.015, 1], [-0.02, 1], '構えより目標方向へ移動（ドライバーはアイアンより控えめでOK）'],
+    fw: [[0.02, 1], [-0.015, 1], '構えより目標方向へ移動している'],
+    ir: [[0.025, 1], [-0.01, 1], '構えより目標方向へ移動している'],
+    wg: [[0.025, 1], [-0.005, 1], '構えより目標方向へしっかり移動している'],
+  },
+  // 正面：インパクトでの頭の移動（目標方向が＋）
+  head: {
+    dr: [[-1, 0.015], [-1, 0.04], '構えた位置より後ろ（ボールのかなり後ろに頭を残す）'],
+    fw: [[-1, 0.025], [-1, 0.05], '構えた位置か、それより後ろ'],
+    ir: [[-1, 0.03], [-1, 0.06], '構えた位置か、それより少し後ろ'],
+    wg: [[-1, 0.04], [-1, 0.07], 'ほぼ構えた位置（ボールのほぼ真上）'],
+  },
+  // 正面：インパクトでの手元の移動（目標方向が＋）
+  hands: {
+    dr: [[-0.04, 1], [-0.07, 1], '構えとほぼ同じ位置（ドライバーはアッパーに打つので強いハンドファーストは不要）'],
+    fw: [[-0.02, 1], [-0.05, 1], '構えと同じか、やや目標方向'],
+    ir: [[-0.01, 1], [-0.04, 1], '構えと同じか、それより目標方向（ハンドファースト）'],
+    wg: [[0.005, 1], [-0.02, 1], '構えより目標方向（しっかりハンドファースト）'],
+  },
+  // 後方：前傾角度
+  spine: {
+    dr: [[25, 42], [18, 50], '約25〜40°（クラブが長いので浅め）'],
+    fw: [[28, 45], [20, 52], '約30〜42°'],
+    ir: [[30, 48], [22, 56], '約32〜45°'],
+    wg: [[33, 52], [25, 58], '約35〜48°（クラブが短いので深め）'],
+  },
+  // 後方：構えた時の手元の位置（肩よりボール側が＋）
+  reach: {
+    dr: [[0, 0.12], [-0.03, 0.16], '肩の真下よりやや前（クラブが長いぶんボールから遠め）'],
+    fw: [[-0.02, 0.1], [-0.05, 0.14], '肩の真下〜やや前'],
+    ir: [[-0.03, 0.09], [-0.06, 0.13], '肩の真下〜やや前（腕が自然に垂れる位置）'],
+    wg: [[-0.05, 0.07], [-0.08, 0.11], '肩のほぼ真下（ボールに近め）'],
+  },
+  // 後方：トップでの手元（肩よりボール側が＋＝アップライト）
+  top: {
+    dr: [[-0.12, 0.05], [-0.17, 0.1], '後ろ側の肩の上〜やや背中側（ドライバーはややフラット）'],
+    fw: [[-0.1, 0.06], [-0.15, 0.11], '後ろ側の肩の上あたり'],
+    ir: [[-0.09, 0.07], [-0.14, 0.12], '後ろ側の肩の上あたり'],
+    wg: [[-0.07, 0.09], [-0.12, 0.14], '後ろ側の肩の上〜ややボール側（ウェッジはアップライト）'],
+  },
+  // 後方：振り下ろしの軌道（振り上げより外側が＋）
+  path: {
+    dr: [[-0.08, 0.02], [-0.12, 0.05], '振り上げより少し内側から（ドライバーはややインサイドアウトでOK）'],
+    fw: [[-0.07, 0.02], [-0.11, 0.05], '振り上げより少し内側から下ろす'],
+    ir: [[-0.07, 0.02], [-0.11, 0.05], '振り上げより少し内側から下ろす'],
+    wg: [[-0.06, 0.025], [-0.1, 0.055], '振り上げとほぼ同じ所を通す'],
+  },
+};
+const crit = (k) => { const c = CRIT[k][S.club] || CRIT[k].ir; return { good: c[0], warn: c[1], ideal: c[2] }; };
 
 // MediaPipe の関節番号
 const L = { nose: 0, lEar: 7, rEar: 8, lSh: 11, rSh: 12, lEl: 13, rEl: 14, lWr: 15, rWr: 16, lHip: 23, rHip: 24, lKn: 25, rKn: 26, lAn: 27, rAn: 28, lHeel: 29, rHeel: 30, lToe: 31, rToe: 32 };
@@ -103,6 +176,15 @@ function segInit(id, cur, onChange) {
 }
 segInit('segView', 'auto', (v) => { S.viewPref = v; if (S.analyzed) { S.view = v === 'auto' ? S.autoView : v; paintView2(S.view); evaluate(); } });
 const paintView2 = segInit('segView2', '', (v) => { S.view = v; evaluate(); });
+// クラブ（入力欄と結果欄の2か所。どちらで変えても両方そろえる）
+let paintClub = () => {}, paintClub2 = () => {};
+const setClub = (v) => {
+  S.club = v; store.set('club', v);
+  paintClub(v); paintClub2(v);
+  if (S.analyzed) evaluate();
+};
+paintClub = segInit('segClub', S.club, setClub);
+paintClub2 = segInit('segClub2', S.club, setClub);
 segInit('segSpeed', '0.25', (v) => { S.rate = +v; video.playbackRate = S.rate; });
 
 function toggle(id, key) {
@@ -114,7 +196,8 @@ toggle('#tSkel', 'skel'); toggle('#tPath', 'path'); toggle('#tRef', 'ref');
 $('#file').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
-  S.analyzed = false; S.fileName = f.name; S.entry = null;
+  S.analyzed = false; S.posed = false; S.fileName = f.name; S.entry = null;
+  $('#analyzeBtn').textContent = '② この動画を解析する';
   $('#results').classList.add('hidden');
   $('#playerBox').classList.add('hidden');
   $('#analyzeBox').classList.remove('hidden');
@@ -170,6 +253,33 @@ async function analyze() {
   const btn = $('#analyzeBtn');
   btn.disabled = true;
   try {
+    if (!S.posed) await readPose();
+    S.ph = detectPhases();
+    S.autoView = detectView();
+    S.view = S.viewPref === 'auto' ? S.autoView : S.viewPref;
+    paintView2(S.view);
+    S.analyzed = true;
+    S.entry = null; // 今のプレーヤーの新しい記録として保存する
+    msg('解析完了！'); bar(1);
+    $('#analyzeBox').classList.add('hidden');
+    $('#playerBox').classList.remove('hidden');
+    $('#results').classList.remove('hidden');
+    buildChips();
+    evaluate(true);
+    await buildSequence();
+    await seek(S.ph.address * S.dt);
+    draw();
+    $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    console.error(err);
+    msg('エラー：' + (err.message || err), true);
+    btn.disabled = false;
+  }
+}
+
+// 動画の各コマから骨格を読み取る（動画ごとに1回だけ）
+async function readPose() {
+  {
     // iPhoneのSafariでは、一度再生操作をしておくとコマ送りが安定する
     try { await video.play(); video.pause(); } catch { /* 無視 */ }
     msg('AIモデルを準備中…（初回のみ数十秒かかることがあります）'); bar(0.02);
@@ -208,25 +318,7 @@ async function analyze() {
     }
     if (found < S.n * 0.5) throw new Error('体をうまく検出できませんでした。全身が映っているか、明るさは十分かを確認してください。');
     S.frames = smooth(fill(raw));
-    S.ph = detectPhases();
-    S.autoView = detectView();
-    S.view = S.viewPref === 'auto' ? S.autoView : S.viewPref;
-    paintView2(S.view);
-    S.analyzed = true;
-    msg('解析完了！'); bar(1);
-    $('#analyzeBox').classList.add('hidden');
-    $('#playerBox').classList.remove('hidden');
-    $('#results').classList.remove('hidden');
-    buildChips();
-    evaluate(true);
-    await buildSequence();
-    await seek(S.ph.address * S.dt);
-    draw();
-    $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } catch (err) {
-    console.error(err);
-    msg('エラー：' + (err.message || err), true);
-    btn.disabled = false;
+    S.posed = true;
   }
 }
 
@@ -281,7 +373,12 @@ function detectPhases() {
   // バックスイング開始＝トップから遡って手が止まっている所
   const still = 0.22 * scale;
   let start = 0;
-  for (let i = top; i >= 2; i--) { if (sp[i] < still && sp[i - 1] < still && sp[i - 2] < still) { start = i; break; } }
+  // トップで一瞬止まる人（タメを作る人）を「構え」と間違えないよう、
+  // 手がトップと構えの中間より下にある所から遡って探す
+  const lowY = hy[argmax(hy, Math.max(0, top - sec(3.0)), top)];
+  let from = top;
+  while (from > 2 && hy[from] - hy[top] < 0.5 * (lowY - hy[top])) from--;
+  for (let i = from; i >= 2; i--) { if (sp[i] < still && sp[i - 1] < still && sp[i - 2] < still) { start = i; break; } }
   const address = Math.max(0, start - 1);
   // フィニッシュ＝インパクト後に手が止まった所
   let finish = -1;
@@ -343,21 +440,23 @@ function evaluate(saveHist) {
 
     // アドレス
     const stance = Math.abs(P(a, L.lAn).x - P(a, L.rAn).x) / (shW0 || 1);
-    const st1 = grade(stance, [0.9, 1.6], [0.7, 1.9]);
+    const c1 = crit('stance');
+    const st1 = grade(stance, c1.good, c1.warn);
     add('address', {
       name: 'スタンス幅（足の開き）', status: st1,
-      value: `肩幅の 約${stance.toFixed(1)}倍`, ideal: '肩幅の1.0〜1.5倍くらい（ドライバーは広め、短いクラブは狭め）',
-      about: '両足の間隔です。狭すぎると体がふらつき、広すぎると体が回りにくくなります。',
-      fix: st1 === 'good' ? '適切なスタンス幅です。' : stance < 0.9 ? 'スタンスが狭めです。両足のかかとの内側が肩幅くらいになるよう広げましょう。' : 'スタンスが広すぎます。腰が回りにくくなるので少し狭めましょう。',
+      value: `肩幅の 約${stance.toFixed(1)}倍`, ideal: c1.ideal,
+      about: '両足の間隔です。狭すぎると体がふらつき、広すぎると体が回りにくくなります。長いクラブほど広く、短いクラブほど狭く構えます。',
+      fix: st1 === 'good' ? `${clubName(S.club)}に合ったスタンス幅です。` : stance < c1.good[0] ? `${clubName(S.club)}にしてはスタンスが狭めです。もう少し足を広げて、体の回転を支えましょう。` : `${clubName(S.club)}にしてはスタンスが広すぎます。腰が回りにくくなるので少し狭めましょう。`,
       drill: 'クラブを肩に当てて真下に下ろし、足の位置の目印にして構える練習。',
     });
     const tilt = deg(Math.atan2(P(a, sd.trailSh).y - P(a, sd.leadSh).y, Math.abs(P(a, sd.trailSh).x - P(a, sd.leadSh).x)));
-    const st2 = grade(tilt, [2, 16], [-1, 22]);
+    const c2 = crit('tilt');
+    const st2 = grade(tilt, c2.good, c2.warn);
     add('address', {
       name: '肩の傾き', status: st2,
-      value: `${sd.trailName}肩が 約${tilt.toFixed(0)}° 下がっている${tilt < 0 ? `（${sd.leadName}肩の方が低い）` : ''}`, ideal: `${sd.trailName}肩がやや低い（約5〜15°）`,
-      about: `${sd.trailName}手は${sd.leadName}手より下でグリップするため、自然に${sd.trailName}肩が少し下がるのが正しい構えです。`,
-      fix: st2 === 'good' ? '自然な傾きです。' : tilt < 2 ? `肩が水平か${sd.leadName}肩が下がっています。背骨をほんの少し${sd.trailName}に傾けて構えましょう。` : `${sd.trailName}肩が下がりすぎです。体が${sd.trailName}に傾くとダフり（ボールの手前を打つミス）の原因に。`,
+      value: `${sd.trailName}肩が 約${tilt.toFixed(0)}° 下がっている${tilt < 0 ? `（${sd.leadName}肩の方が低い）` : ''}`, ideal: `${sd.trailName}肩がやや低い：${c2.ideal}`,
+      about: `${sd.trailName}手は${sd.leadName}手より下でグリップするため、自然に${sd.trailName}肩が少し下がるのが正しい構えです。ボールを${sd.leadName}足寄りに置くドライバーほど傾きが大きくなります。`,
+      fix: st2 === 'good' ? '自然な傾きです。' : tilt < c2.good[0] ?`肩が水平か${sd.leadName}肩が下がっています。背骨をほんの少し${sd.trailName}に傾けて構えましょう。` : `${sd.trailName}肩が下がりすぎです。体が${sd.trailName}に傾くとダフり（ボールの手前を打つミス）の原因に。`,
       drill: `構えたら${sd.trailName}手を${sd.trailName}ひざに軽く当ててから、そっとグリップに戻すと自然な傾きが作れます。`,
     });
 
@@ -429,34 +528,74 @@ function evaluate(saveHist) {
       drill: `ステップ打ち：両足をそろえて振り上げ、トップで${sd.leadName}足を目標方向へ一歩踏み出してから振り下ろす。`,
     });
 
+    // ハーフウェイダウン（手元が腰の高さまで下りた所）で、胸がまだ後ろを向いているか
+    const waistY = (hipM(a).y + shM(a).y) / 2 + 0.25 * (hipM(a).y - shM(a).y);
+    let hw = -1;
+    for (let i = tp; i <= im; i++) { if (hand(i).y >= waistY) { hw = i; break; } }
+    if (hw > tp && hw < im) {
+      const shHW = turn(hw, L.lSh, L.rSh, shW0);
+      const st9b = grade(shHW, [28, 90], [15, 90]);
+      add('downswing', {
+        name: '胸の向き（ハーフウェイダウン）', status: st9b,
+        value: `手元が腰の高さに来た時、肩が 約${shHW.toFixed(0)}° 後ろ向き`, ideal: `まだ${sd.trailName}斜め後ろ（約30〜45°）を向いている`,
+        about: 'ハーフウェイダウン＝振り下ろしの途中で、手元が腰の高さまで下りた場面。ここで胸がまだ後ろを向いていると、クラブが内側から下りてきます。早く目標を向くと、外から下りるアウトサイドイン（スライス）の原因になります。',
+        fix: st9b === 'good' ? '胸を開かずに振り下ろせています。' : `振り下ろしの途中で胸が早く目標を向いています（上半身が先に回っている）。手元が${sd.trailName}腰の前に来るまで、胸は${sd.trailName}斜め後ろに向けたままにしましょう。`,
+        drill: `腰から腰までの小さなスイング（ハーフスイング）を鏡の前で。手元が${sd.trailName}腰の前に来た所で止め、胸が${sd.trailName}斜め後ろを向いているか確認します。両足をそろえて打つと、手先でなく体の回転で振る感覚がつかめます。`,
+      });
+    }
+
     // インパクト
     const wShift = along(hipM(a), hipM(im));
-    const st10 = grade(wShift, [0.025, 1], [-0.01, 1]);
+    const c10 = crit('shift');
+    const st10 = grade(wShift, c10.good, c10.warn);
     add('impact', {
       name: '体重移動', status: st10,
-      value: wShift >= 0 ? `腰が構えより目標方向へ 約${cm(wShift)}cm` : `腰が構えより後ろに 約${cm(wShift)}cm 残っている`, ideal: '構えより目標方向へ移動している',
+      value: wShift >= 0 ? `腰が構えより目標方向へ 約${cm(wShift)}cm` : `腰が構えより後ろに 約${cm(wShift)}cm 残っている`, ideal: c10.ideal,
       about: `インパクトで体重が${sd.leadName}足に乗っていると、ボールを上から力強く打てます。`,
       fix: st10 === 'good' ? '体重がしっかり目標側に移っています。' : `体重が${sd.trailName}足に残っています（すくい打ち・ダフリの原因）。インパクトで${sd.leadName}腰が${sd.leadName}足の上に来るように。`,
       drill: `${sd.trailName}足のかかとを上げた状態で構え、そのまま打つ練習（強制的に${sd.leadName}足体重になる）。`,
     });
     const headI = along(P(a, L.nose), P(im, L.nose));
-    const st11 = grade(headI, [-1, 0.03], [-1, 0.06]);
+    const c11 = crit('head');
+    const st11 = grade(headI, c11.good, c11.warn);
     add('impact', {
       name: '頭の位置（ビハインド・ザ・ボール）', status: st11,
-      value: headI > 0 ? `頭が目標方向へ 約${cm(headI)}cm 突っ込んでいる` : `頭は構えの位置の 約${cm(headI)}cm 後ろ`, ideal: '構えた位置か、それより少し後ろ',
-      about: 'インパクトでは、体重は目標側に移りつつ「頭はボールより後ろ」に残すのが理想です。',
+      value: headI > 0 ? `頭が目標方向へ 約${cm(headI)}cm 突っ込んでいる` : `頭は構えの位置の 約${cm(headI)}cm 後ろ`, ideal: c11.ideal,
+      about: 'インパクトでは、体重は目標側に移りつつ「頭はボールより後ろ」に残すのが理想です。ドライバーほど頭を後ろに残し、ウェッジは頭がボールのほぼ真上に来ます。',
       fix: st11 === 'good' ? '頭が残せています。' : '頭が目標方向に突っ込んでいます。ボールの後ろ側を見たままインパクトしましょう。',
       drill: `ボールの${sd.trailName}側（目標と反対側）にコインを置き、打ち終わるまでコインを見続ける練習。`,
     });
     const handI = along(hand(a), hand(im));
-    const st12 = grade(handI, [-0.01, 1], [-0.04, 1]);
+    const c12 = crit('hands');
+    const st12 = grade(handI, c12.good, c12.warn);
     add('impact', {
-      name: 'ハンドファースト', status: st12,
-      value: handI >= 0 ? `手元が構えより目標方向に 約${cm(handI)}cm` : `手元が構えより後ろに 約${cm(handI)}cm`, ideal: '構えと同じか、それより目標方向',
-      about: 'ハンドファースト＝インパクトで手元がクラブヘッドより目標側にある形。ボールをしっかりつかまえられます。',
-      fix: st12 === 'good' ? '手元が先行できています。' : '手首をほどいて「すくい上げて」います。手元を目標側に押し込むようにインパクトしましょう。',
-      drill: `ハーフスイングで、インパクトの瞬間に手元が${sd.leadName}太ももの前に来る形で止める。`,
+      name: S.club === 'dr' ? '手元の位置（インパクト）' : 'ハンドファースト', status: st12,
+      value: handI >= 0 ? `手元が構えより目標方向に 約${cm(handI)}cm` : `手元が構えより後ろに 約${cm(handI)}cm`, ideal: c12.ideal,
+      about: S.club === 'dr'
+        ? 'ドライバーはティーアップしたボールを下から上へ（アッパーに）打つので、アイアンほど手元を先行させません。ただし手元が大きく遅れると、手首がほどけてすくい打ちになります。'
+        : 'ハンドファースト＝インパクトで手元がクラブヘッドより目標側にある形。上からボールをとらえ、しっかりつかまえられます。短いクラブほど重要です。',
+      fix: st12 === 'good' ? (S.club === 'dr' ? '手元の位置が適切です。' : '手元が先行できています。')
+        : S.club === 'dr' ? '手元が構えより大きく後ろに残り、手首がほどけています。インパクトで手元が構えた位置に戻ってくるように振りましょう。'
+          : '手首をほどいて「すくい上げて」います。手元を目標側に押し込むようにインパクトしましょう。',
+      drill: S.club === 'dr'
+        ? `ハーフスイングで、インパクトの瞬間に手元が構えた位置に戻ってくる形で止める。`
+        : `クロスハンド（${sd.leadName}手を下、${sd.trailName}手を上にして握る）でハーフスイング。${sd.trailName}手首の甲側への折れ（タメ）がインパクトまで自然に残り、手元が先行する感覚がつかめます。慣れたら普通の握りで、手元が${sd.leadName}太ももの前に来る形で止める。`,
     });
+
+    // フォロー：インパクト後、手元が腰の高さに来た所で目標側の腕が伸びているか（チキンウィング）
+    let fo = -1;
+    for (let i = im + 1; i < fi; i++) { if (hand(i).y <= waistY) { fo = i; break; } }
+    if (fo > im) {
+      const elF = angleAt(P(fo, sd.leadSh), P(fo, sd.leadEl), P(fo, sd.leadWr));
+      const stCw = grade(elF, [145, 181], [125, 181]);
+      add('finish', {
+        name: `フォローでの${sd.leadName}腕の伸び（チキンウィング）`, status: stCw,
+        value: `${sd.leadName}ひじの角度 約${elF.toFixed(0)}°`, ideal: '140°以上（目標方向へ腕が伸びている）',
+        about: `チキンウィング＝インパクト後に${sd.leadName}ひじが引けて曲がり、外へ逃げる形。アウトサイドイン軌道の人によく出る症状で、フェースが開いてスライスの原因になります。`,
+        fix: stCw === 'good' ? '目標方向へ腕を伸ばして振り抜けています。' : `${sd.leadName}ひじが引けています。インパクト後は${sd.leadName}腕を目標方向へ伸ばし、体の回転と一緒に振り抜きましょう。`,
+        drill: `${sd.leadName}手1本でウェッジを短く持ち、ティーアップしたボールを軽く打つ。手先で操作できないので、体の回転で振り抜く感覚が身につきます。`,
+      });
+    }
 
     // フィニッシュ
     const shF = turn(fi, L.lSh, L.rSh, shW0);
@@ -493,12 +632,13 @@ function evaluate(saveHist) {
     const toward = (p, q) => (q.x - p.x) * fdir / H; // ボール方向への移動量
 
     const sp0 = spineAngle(a);
-    const s1 = grade(sp0, [28, 48], [20, 56]);
+    const cs1 = crit('spine');
+    const s1 = grade(sp0, cs1.good, cs1.warn);
     add('address', {
       name: '前傾角度', status: s1,
-      value: `約${sp0.toFixed(0)}°`, ideal: '約30〜45°',
-      about: '前傾角度＝構えた時に上半身を前に倒す角度。股関節（足の付け根）から倒すのがポイントです。',
-      fix: s1 === 'good' ? '良い前傾姿勢です。' : sp0 < 28 ? '上体が起きすぎています。お尻を後ろに突き出すように、足の付け根から前に倒しましょう。' : '前に倒れすぎています。背筋を伸ばし、腕が肩から真下に垂れる位置まで起こしましょう。',
+      value: `約${sp0.toFixed(0)}°`, ideal: cs1.ideal,
+      about: '前傾角度＝構えた時に上半身を前に倒す角度。股関節（足の付け根）から倒すのがポイントです。長いクラブほど浅く、短いクラブほど深くなります。',
+      fix: s1 === 'good' ? `${clubName(S.club)}に合った前傾姿勢です。` : sp0 < cs1.good[0] ? '上体が起きすぎています。お尻を後ろに突き出すように、足の付け根から前に倒しましょう。' : '前に倒れすぎています。背筋を伸ばし、腕が肩から真下に垂れる位置まで起こしましょう。',
       drill: 'クラブを背中（頭・背中・お尻）に当てたまま、足の付け根から前に倒す練習。',
     });
     const kn = angleAt(P(a, sd.trailHip), P(a, sd.trailKn), P(a, sd.trailAn));
@@ -511,12 +651,13 @@ function evaluate(saveHist) {
       drill: 'その場で軽くジャンプして着地した時のひざの角度が目安です。',
     });
     const reach = toward(shM(a), hand(a));
-    const s3 = grade(reach, [-0.03, 0.09], [-0.06, 0.13]);
+    const cs3 = crit('reach');
+    const s3 = grade(reach, cs3.good, cs3.warn);
     add('address', {
       name: '手の位置（腕の垂れ方）', status: s3,
-      value: reach >= 0 ? `手元が肩より 約${cm(reach)}cm ボール側` : `手元が肩より 約${cm(reach)}cm 体側`, ideal: '肩の真下〜やや前（腕が自然に垂れる位置）',
-      about: '腕は肩から自然に垂らした位置でグリップするのが基本。遠すぎても近すぎても軌道が乱れます。',
-      fix: s3 === 'good' ? '自然な位置です。' : reach > 0.09 ? 'ボールから離れすぎて手が前に伸びています。一歩ボールに近づきましょう。' : '手元が体に近すぎます。少しボールから離れて立ちましょう。',
+      value: reach >= 0 ? `手元が肩より 約${cm(reach)}cm ボール側` : `手元が肩より 約${cm(reach)}cm 体側`, ideal: cs3.ideal,
+      about: '腕は肩から自然に垂らした位置でグリップするのが基本。遠すぎても近すぎても軌道が乱れます。長いクラブほどボールから遠く立ちます。',
+      fix: s3 === 'good' ? '自然な位置です。' : reach > cs3.good[1] ? 'ボールから離れすぎて手が前に伸びています。一歩ボールに近づきましょう。' : '手元が体に近すぎます。少しボールから離れて立ちましょう。',
       drill: '構えた後に一度腕の力を抜いてダラリと垂らし、その位置でクラブを握り直す。',
     });
 
@@ -550,13 +691,14 @@ function evaluate(saveHist) {
       drill: `${sd.trailName}脇にヘッドカバーをはさんで、落とさないようにトップまで上げる。`,
     });
     const topPos = toward(P(tp, sd.trailSh), hand(tp));
-    const s7 = grade(topPos, [-0.09, 0.07], [-0.14, 0.12]);
+    const cs7 = crit('top');
+    const s7 = grade(topPos, cs7.good, cs7.warn);
     add('top', {
       name: 'トップの手の位置（スイングプレーン）', status: s7,
-      value: topPos > 0.07 ? '手元が肩より大きくボール側（アップライト）' : topPos < -0.09 ? '手元が肩より大きく背中側（フラット）' : '手元がほぼ肩の上',
-      ideal: `手元が${sd.trailName}肩の上あたり`,
-      about: 'スイングプレーン＝スイング中にクラブが描く面。トップで手が肩の上にあると、正しい面に乗りやすくなります。',
-      fix: s7 === 'good' ? '良い位置にトップが収まっています。' : topPos > 0.07 ? '手を高く上げすぎています（アップライト）。もう少し体を回して、手は肩の高さあたりに。' : '手元が背中側に入りすぎています（フラット）。腕を少し高く上げましょう。',
+      value: topPos > cs7.good[1] ? '手元が肩より大きくボール側（アップライト）' : topPos < cs7.good[0] ? '手元が肩より大きく背中側（フラット）' : '手元がほぼ肩の上',
+      ideal: cs7.ideal,
+      about: 'スイングプレーン＝スイング中にクラブが描く面。トップで手が肩の上にあると、正しい面に乗りやすくなります。長いクラブほど面はフラット（寝た角度）になります。',
+      fix: s7 === 'good' ? '良い位置にトップが収まっています。' : topPos > cs7.good[1] ? '手を高く上げすぎています（アップライト）。もう少し体を回して、手は肩の高さあたりに。' : '手元が背中側に入りすぎています（フラット）。腕を少し高く上げましょう。',
       drill: '後方から撮影した動画で、トップの手元が肩の真上付近に来るか毎回チェック。',
     });
 
@@ -565,16 +707,17 @@ function evaluate(saveHist) {
     let bi = ph.address, best = 1e9;
     for (let i = ph.address; i <= tp; i++) { const d = Math.abs(hand(i).y - yD); if (d < best) { best = d; bi = i; } }
     const path = toward(hand(bi), hand(ds));
-    const s8 = grade(path, [-0.07, 0.02], [-0.11, 0.05]);
+    const cs8 = crit('path');
+    const s8 = grade(path, cs8.good, cs8.warn);
     add('downswing', {
       name: 'スイング軌道（インサイドアウト／アウトサイドイン）', status: s8,
-      value: path > 0.02 ? `振り下ろしが振り上げより 約${cm(path)}cm 外側（アウトサイドイン）` : path < -0.07 ? `振り下ろしが振り上げより 約${cm(path)}cm 内側（インサイドアウトが強い）` : '振り上げと同じか、やや内側から下りている（理想的）',
-      ideal: '振り上げより少し内側から下ろす（インサイドから）',
+      value: path > cs8.good[1] ? `振り下ろしが振り上げより 約${cm(path)}cm 外側（アウトサイドイン）` : path < cs8.good[0] ? `振り下ろしが振り上げより 約${cm(path)}cm 内側（インサイドアウトが強い）` : '振り上げと同じか、やや内側から下りている（理想的）',
+      ideal: cs8.ideal,
       about: 'アウトサイドイン＝外側から内側へ振る軌道。スライス（右に曲がる球、左打ちは左）の一番の原因です。インサイドアウト＝内側から外側へ振る軌道。ドローボールにつながりますが、強すぎるとフック・プッシュの原因に。',
       fix: s8 === 'good' ? '理想的な軌道です。動画の青線より赤線が少し内側を通っているか確認しましょう。'
-        : path > 0.02 ? '切り返しで肩や腕から動き、外から下りています。トップから「手元を真下に下ろす」イメージで、下半身から切り返しましょう。'
+        : path > cs8.good[1] ? '切り返しで肩や腕から動き、外から下りています。トップから「手元を真下に下ろす」イメージで、下半身から切り返しましょう。アウトサイドインのよくある原因は「トップで肩の回転が浅い」「振り下ろしで上半身が先に動く」「体重が右足に残る」の3つです。正面からも撮影すると、どれが当てはまるかアプリで確認できます。'
           : '内側から入りすぎています。体の回転を止めずに、目標方向へ振り抜きましょう。',
-      drill: path > 0.02 ? 'ボールの外側（向こう側）にヘッドカバーなどを置き、当てないように打つ練習（外から下りると当たる）。' : 'ボールの内側（手前）に障害物を置き、当てないように打つ練習。',
+      drill: path > cs8.good[1] ? 'ボールの外側（向こう側）にヘッドカバーなどを置き、当てないように打つ練習（外から下りると当たる）。' : 'ボールの内側（手前）に障害物を置き、当てないように打つ練習。',
     });
 
     const ee = toward(hipM(a), hipM(im));
@@ -650,6 +793,7 @@ function render(back, down, ratio) {
   const nW = S.checks.filter((c) => c.status === 'warn').length;
   const nB = S.checks.filter((c) => c.status === 'bad').length;
   $('#summaryKv').innerHTML = `
+    <dt>クラブ</dt><dd>${clubName(S.club)}</dd>
     <dt>撮影角度</dt><dd>${S.view === 'fo' ? '正面' : '後方'}${S.viewPref === 'auto' ? '（自動判定）' : ''}</dd>
     <dt>テンポ</dt><dd>約 ${ratio.toFixed(1)} : 1</dd>
     <dt>スイング時間</dt><dd>${(back + down).toFixed(2)}秒（トップまで ${back.toFixed(2)}秒）</dd>
@@ -678,6 +822,35 @@ function render(back, down, ratio) {
     </div>`;
   }).join('');
   $$('#phases [data-jump]').forEach((b) => b.addEventListener('click', () => jump(b.dataset.jump, true)));
+  renderPros();
+}
+
+// ---------- トッププロのお手本（ALBA Net のスイング連続写真へのリンク） ----------
+// 写真そのものはアプリに取り込まず、同じクラブ・同じ角度のページへ案内する
+const PRO_BASE = 'https://www.alba.co.jp/tour/swing-photo/';
+const PROS = {
+  'dr|fo': [['松山英樹', '20241022-matsuyama-hideki-driver-front/'], ['竹田麗央', '20250203-takeda-rio-driver-front/'], ['渋野日向子', '20250203-shibuno-hinako-driver-front/'], ['吉田優利', '20250203-yoshida-yuri-driver-front/'], ['勝みなみ', '20260209-minami-katsu-driver-front/']],
+  'dr|dtl': [['石川遼', '20250624-ishikawa-ryo-driver-back/'], ['勝みなみ', '20260209-minami-katsu-driverr-back/'], ['石坂友宏', '20250624-ishizaka-tomohiro-driver-back/'], ['内山遥人', '20250720-uchiyama-haruto-driver-back/']],
+  'fw|fo': [['藤本佳則（FW）', '20250624-fujimoto-yoshinori-fairwaywood-front/'], ['幡地隆寛（FW）', '20250624-hataji-hatakahiro-fairwaywood-front/']],
+  'fw|dtl': [['蛭田みな美（FW）', '20250624-hiruta-minami-fairwaywood-back/']],
+  'ir|fo': [['宮里藍（6番アイアン）', '20250203-miyazato-ai-6iron-front/']],
+  'wg|fo': [['佐久間朱莉（ウェッジ）', 'jvo7m702y_2w/']],
+};
+const PRO_TIPS = {
+  fo: ['アドレス：スタンスの幅と、肩の傾き', 'トップ：頭の位置が構えからどれだけ動いているか', 'インパクト：頭がボールの後ろに残り、腰が目標側へ移っているか', 'フィニッシュ：目標側の足一本で立てているか'],
+  dtl: ['アドレス：前傾の深さと、手元と体の距離', 'トップ：手元が肩のどのあたりにあるか', 'ダウンスイング：手元が振り上げより内側を通っているか', 'インパクト：前傾とお尻の位置が構えのまま保たれているか'],
+};
+function renderPros() {
+  const box = $('#pros');
+  if (!box) return;
+  const list = PROS[S.club + '|' + S.view] || [];
+  const vName = S.view === 'fo' ? '正面' : '後方';
+  let html = list.length
+    ? `<div class="row">${list.map(([n, u]) => `<a class="btn small" href="${PRO_BASE}${u}" target="_blank" rel="noopener">${esc(n)}</a>`).join('')}</div>`
+    : `<p class="note">${clubName(S.club)}・${vName}のお手本はまだ登録していません。下の一覧から探してみてください。</p>`;
+  html += `<p class="note" style="margin:8px 0 2px"><b>見比べるポイント（${vName}）</b></p><ul class="note" style="margin:0;padding-left:1.2em">${PRO_TIPS[S.view].map((t) => `<li>${t}</li>`).join('')}</ul>`;
+  html += `<p class="note" style="margin-top:8px"><a href="${PRO_BASE}" target="_blank" rel="noopener">プロのスイング連続写真をもっと見る（ALBA Net）</a></p>`;
+  box.innerHTML = html;
 }
 
 function buildChips() {
@@ -844,22 +1017,33 @@ function applyProfile() {
   $('#playerInfo').textContent = `${p.hand === 'R' ? '右打ち' : '左打ち'}・身長${p.height}cm・記録${hist(p.id).length}件`;
 }
 
-// 表示中の解析結果を、切り替え先のプレーヤーの記録に付け替える
+// プレーヤーを切り替える。前のプレーヤーの記録は動かさず、表示中の結果は閉じる
 function switchTo(pid) {
-  const from = S.entry && !S.entry.discarded ? S.entry.pid : null;
   store.set('cur', pid);
-  if (S.analyzed && from && from !== pid) {
-    const h = hist(from), i = h.findIndex((r) => r.id === S.entry.id);
-    if (i >= 0) {
-      const [r] = h.splice(i, 1); setHist(from, h);
-      const h2 = hist(pid); h2.unshift(r); setHist(pid, h2);
-      S.entry.pid = pid;
-    }
-  }
+  closeResults();
   applyProfile();
-  if (S.analyzed) evaluate(); else renderGrowth();
+  renderGrowth();
 }
-$('#playerSel').addEventListener('change', (e) => { closeForm(); gView = null; switchTo(e.target.value); });
+
+// 表示中の解析結果を閉じる（骨格データは残すので、同じ動画を読み取り直さずに判定し直せる）
+function closeResults() {
+  S.entry = null;
+  if (!S.analyzed) return;
+  S.analyzed = false;
+  video.pause();
+  octx.setTransform(1, 0, 0, 1, 0, 0);
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  $('#phaseTag').classList.add('hidden');
+  $('#results').classList.add('hidden');
+  $('#playerBox').classList.add('hidden');
+  $('#analyzeBox').classList.remove('hidden');
+  const btn = $('#analyzeBtn');
+  btn.disabled = false;
+  btn.textContent = `② この動画を「${curProfile().name}」として判定する`;
+  bar(0);
+  msg('プレーヤーを切り替えたので、結果を閉じました（前のプレーヤーの記録はそのまま残っています）。同じ動画で判定する場合は上のボタンを押してください。体の読み取りは済んでいるので数秒で終わります。');
+}
+$('#playerSel').addEventListener('change', (e) => { closeForm(); gView = null; gClub = null; switchTo(e.target.value); });
 
 let formMode = null, formHand = 'R';
 const paintHand = segInit('segHand', 'R', (v) => { formHand = v; });
@@ -885,7 +1069,7 @@ $('#pfSave').addEventListener('click', () => {
   closeForm();
   if (mode === 'add') {
     const p = { id: newId('p'), name, hand: formHand, height: h };
-    ps.push(p); store.set('profiles', ps); gView = null;
+    ps.push(p); store.set('profiles', ps); gView = null; gClub = null;
     switchTo(p.id);
   } else {
     Object.assign(ps.find((x) => x.id === curProfile().id), { name, hand: formHand, height: h });
@@ -902,10 +1086,8 @@ $('#pfDelete').addEventListener('click', () => {
     const ps = profiles().filter((x) => x.id !== p.id);
     store.set('profiles', ps);
     try { localStorage.removeItem('swing.hist.' + p.id); } catch { /* 無視 */ }
-    if (S.entry && S.entry.pid === p.id) S.entry = { discarded: true };
-    store.set('cur', ps[0].id); gView = null;
-    closeForm(); applyProfile();
-    if (S.analyzed) evaluate(); else renderGrowth();
+    store.set('cur', ps[0].id); gView = null; gClub = null;
+    closeForm(); closeResults(); applyProfile(); renderGrowth();
   });
   $('#pfDelNo').addEventListener('click', () => { $('#pfConfirm').innerHTML = ''; });
 });
@@ -913,7 +1095,7 @@ $('#pfDelete').addEventListener('click', () => {
 // 解析結果を記録する（同じ動画で角度などを切り替えた時は、新しく増やさず上書き）
 function recordEntry(back, down, ratio) {
   const checks = S.checks.filter((c) => c.status !== 'na').map((c) => ({ k: c.phase + '|' + c.name, phase: c.phase, name: c.name, st: c.status, v: c.value }));
-  const data = { file: S.fileName, view: S.view, score: S.score, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
+  const data = { file: S.fileName, view: S.view, club: S.club, score: S.score, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
   if (!(S.entry && S.entry.discarded)) {
     const pid = S.entry ? S.entry.pid : curProfile().id;
     const h = hist(pid);
@@ -922,22 +1104,33 @@ function recordEntry(back, down, ratio) {
     else { const id = newId('h'); h.unshift({ id, at: new Date().toISOString(), ...data }); S.entry = { pid, id }; }
     setHist(pid, h.slice(0, 300));
     // 総合結果の「前回比」
-    const list = sorted(hist(pid)).filter((r) => r.view === S.view);
+    const list = sorted(hist(pid)).filter((r) => r.view === S.view && clubOf(r) === S.club);
     const idx = list.findIndex((r) => r.id === S.entry.id);
     const vs = $('#vsPrev');
     if (vs) {
-      if (idx > 0) { const d = S.score - list[idx - 1].score; vs.textContent = `${d > 0 ? '+' : ''}${d}点（前回 ${list[idx - 1].score}点）`; }
-      else vs.textContent = `初めての${S.view === 'fo' ? '正面' : '後方'}の記録`;
+      if (idx > 0) { const d = S.score - list[idx - 1].score; vs.textContent = `${d > 0 ? '+' : ''}${d}点（前回の${clubName(S.club)} ${list[idx - 1].score}点）`; }
+      else vs.textContent = `初めての${S.view === 'fo' ? '正面' : '後方'}・${clubName(S.club)}の記録`;
     }
   }
-  gView = S.view;
+  gView = S.view; gClub = S.club;
   applyProfile();
   renderGrowth();
 }
 
 // ---------- 成長の記録 ----------
-let gView = null;
+let gView = null, gClub = null;
 const paintGView = segInit('segGView', '', (v) => { gView = v; renderGrowth(); });
+// クラブ機能より前の記録は「未設定」として別に扱う（以前の基準で判定されているため）
+const clubOf = (r) => r.club || 'none';
+
+// 成長の記録のクラブ切り替えボタン（記録があるクラブ＋今のクラブだけ並べる）
+function renderGClub(all) {
+  const have = new Set(all.map(clubOf));
+  const keys = ['dr', 'fw', 'ir', 'wg', 'none'].filter((c) => have.has(c) || c === gClub);
+  const box = $('#segGClub');
+  box.innerHTML = keys.map((c) => `<button data-v="${c}" class="${c === gClub ? 'on' : ''}">${c === 'none' ? '未設定' : clubName(c)}</button>`).join('');
+  $$('#segGClub button').forEach((b) => b.addEventListener('click', () => { gClub = b.dataset.v; renderGrowth(); }));
+}
 
 function renderGrowth() {
   const p = curProfile();
@@ -945,13 +1138,15 @@ function renderGrowth() {
   const all = sorted(hist(p.id));
   renderHistory(p.id, all);
   if (!gView) gView = all.length ? all[all.length - 1].view : 'fo';
+  if (!gClub) gClub = all.length ? clubOf(all[all.length - 1]) : S.club;
   paintGView(gView);
-  const list = all.filter((r) => r.view === gView);
+  renderGClub(all);
+  const list = all.filter((r) => r.view === gView && clubOf(r) === gClub);
   const box = $('#growth');
-  const vName = gView === 'fo' ? '正面' : '後方';
-  if (!list.length) { box.innerHTML = `<p class="note">${vName}から撮った記録はまだありません。</p>`; return; }
+  const vName = `${gView === 'fo' ? '正面' : '後方'}・${gClub === 'none' ? 'クラブ未設定' : clubName(gClub)}`;
+  if (!list.length) { box.innerHTML = `<p class="note">${vName}の記録はまだありません。</p>`; return; }
   let html = chart(list.slice(-20));
-  if (list.length < 2) { box.innerHTML = html + `<p class="note">${vName}からもう1回以上解析すると、前回との比較が表示されます。</p>`; return; }
+  if (list.length < 2) { box.innerHTML = html + `<p class="note">${vName}でもう1回以上解析すると、前回との比較が表示されます。</p>`; return; }
   const last = list[list.length - 1], prev = list[list.length - 2];
   html += `<div class="gsec"><h3>前回（${fmtDate(prev.at)}）と比べて</h3>${compare(prev, last)}</div>`;
   if (list.length >= 3) {
@@ -1028,7 +1223,7 @@ function renderHistory(pid, all) {
   const box = $('#history');
   const h = all.slice().reverse();
   if (!h.length) { box.innerHTML = '<p class="note">まだ記録がありません。</p>'; return; }
-  box.innerHTML = h.map((r) => `<div class="hist-item"><div><b>${fmtDate(r.at)}</b>（${r.view === 'fo' ? '正面' : '後方'}）スコア <b>${r.score}</b>・テンポ ${r.tempo}:1
+  box.innerHTML = h.map((r) => `<div class="hist-item"><div><b>${fmtDate(r.at)}</b>（${r.view === 'fo' ? '正面' : '後方'}・${r.club ? clubName(r.club) : 'クラブ未設定'}）スコア <b>${r.score}</b>・テンポ ${r.tempo}:1
       <br><span class="note">${esc(r.file || '')}</span></div>
       <button class="btn small" data-del="${r.id}">削除</button></div>`).join('')
     + (pendingDel ? `<div id="confirmBox">この記録を削除しますか？（元に戻せません）
@@ -1106,5 +1301,8 @@ const GLOSS = [
   ['フライングエルボー', 'トップで後ろ側のひじが外に浮く形。'],
   ['ダフリ／トップ', 'ダフリ＝ボールの手前の地面を打つミス。トップ＝ボールの上部を打つミス（※トップの位置とは別の意味）。'],
   ['テンポ', 'スイングのリズム。振り上げ：振り下ろしの時間比で表す。'],
+  ['インサイドイン', '体の内側から入り、内側へ抜ける軌道。方向性と飛距離が安定する、理想とされる軌道。'],
+  ['ハーフウェイダウン', '振り下ろしの途中で、手元が腰の高さまで下りた場面。胸がまだ後ろを向いているのが理想。'],
+  ['チキンウィング', 'インパクト後に目標側のひじが引けて曲がる形。アウトサイドイン軌道の人に多い。'],
 ];
 $('#gloss').innerHTML = GLOSS.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join('');
