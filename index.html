@@ -83,6 +83,10 @@ details{margin-top:8px}
 .check .val{font-size:14px;margin:4px 0}
 .check .val span{color:var(--sub)}
 .check p{margin:4px 0;font-size:14px}
+.check::after{content:"";display:block;clear:both}
+.check .vz{float:right;width:38%;max-width:170px;margin:2px 0 6px 10px;border-radius:8px;background:#000;cursor:pointer}
+.vzlegend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin:0 0 6px}
+.vzlegend i{display:inline-block;width:16px;height:4px;border-radius:2px;vertical-align:middle;margin-right:4px}
 .check .lbl{font-weight:700;font-size:13px}
 .hist-item{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:8px 0;font-size:14px;gap:8px}
 .legend{display:flex;gap:12px;font-size:12px;color:var(--sub);flex-wrap:wrap;margin-top:6px}
@@ -263,6 +267,13 @@ details{margin-top:8px}
 
     <section class="card">
       <h2>🔍 動作ごとの解説</h2>
+      <p class="note" style="margin:0 0 4px">各項目の写真は、あなたの動画のその場面です（タップするとその場面に移動します）。</p>
+      <div class="vzlegend">
+        <span><i style="border-top:3px dashed #ffd23f;height:0;background:none"></i>構えた時など、比べる基準</span>
+        <span><i style="background:#3ddc84"></i>今回（良い）</span>
+        <span><i style="background:#ffb020"></i>今回（注意）</span>
+        <span><i style="background:#ff5a46"></i>今回（要改善）</span>
+      </div>
       <div id="phases"></div>
     </section>
   </div>

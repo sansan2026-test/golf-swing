@@ -14,6 +14,7 @@ const S = {
   frames: [], n: 0, dt: 1 / 30, W: 0, H: 0, vw: 0, vh: 0,
   view: null, autoView: null, ph: null, checks: [], score: 0,
   skel: true, path: true, ref: true, rate: 0.25, analyzed: false, fileName: '',
+  fcache: new Map(), vizTok: 0, // 解説図用：コマ画像の保存場所と、描き直しの番号
 };
 
 const PHASES = [
@@ -196,7 +197,7 @@ toggle('#tSkel', 'skel'); toggle('#tPath', 'path'); toggle('#tRef', 'ref');
 $('#file').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
-  S.analyzed = false; S.posed = false; S.fileName = f.name; S.entry = null;
+  S.analyzed = false; S.posed = false; S.fileName = f.name; S.entry = null; S.fcache = new Map();
   $('#analyzeBtn').textContent = '② この動画を解析する';
   $('#results').classList.add('hidden');
   $('#playerBox').classList.add('hidden');
@@ -266,7 +267,7 @@ async function analyze() {
     $('#results').classList.remove('hidden');
     buildChips();
     evaluate(true);
-    await buildSequence();
+    await serial(buildSequence);
     await seek(S.ph.address * S.dt);
     draw();
     $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -429,6 +430,12 @@ function evaluate(saveHist) {
   const H = bodyScale(a);
   const C = [];
   const add = (phase, o) => C.push({ phase, ...o });
+  // 解説図の指定：i＝描くコマ、ref＝比べる基準のコマ（黄色の点線）、seg＝線、ang＝関節の角度、
+  // mark＝点、vline/hline＝基準の縦線・横線、path＝手の通り道、refPt＝基準の点
+  const J = (k) => (f) => P(f, k);
+  const NOSE = J(L.nose);
+  const vz = (key, v) => { const c = C.find((x) => x.name.includes(key)); if (c && c.status !== 'na' && v.i >= 0 && v.i < S.n) c.viz = v; };
+  const SHL = [J(L.lSh), J(L.rSh)], HIPL = [J(L.lHip), J(L.rHip)];
 
   // テンポ（両方の角度で共通）
   const back = (tp - ph.start) * S.dt, down = Math.max(S.dt, (im - tp) * S.dt), ratio = back / down;
@@ -648,6 +655,27 @@ function evaluate(saveHist) {
       fix: st15 === 'good' ? '良い形です。' : `${sd.trailName}足がべた足のままです。インパクト後は${sd.trailName}ひざを${sd.leadName}ひざに寄せるように回しましょう。`,
       drill: `振り終わりに${sd.trailName}ひざを${sd.leadName}ひざにくっつける素振り。`,
     });
+
+    // 正面の解説図
+    const armAng = (f) => ({ i: f, ang: [J(sd.leadSh), J(sd.leadEl), J(sd.leadWr)] });
+    vz('スタンス幅', { i: a, seg: [[J(L.lAn), J(L.rAn)], SHL] });
+    vz('肩の傾き', { i: a, seg: [[J(sd.leadSh), J(sd.trailSh)]], hline: P(a, sd.leadSh) });
+    vz('三角形', armAng(tk));
+    vz('肩の回転（推定）', { i: tp, ref: a, seg: [SHL] });
+    vz('捻転差', { i: tp, ref: a, seg: [SHL, HIPL] });
+    vz('スウェー', { i: tp, ref: a, mark: [hipM], vline: hipM(a) });
+    vz('頭の横ブレ', { i: tp, ref: a, mark: [NOSE], vline: P(a, L.nose) });
+    vz(`トップでの${sd.leadName}腕`, armAng(tp));
+    vz('下半身リード', { i: ds, ref: tp, mark: [hipM], vline: hipM(tp) });
+    vz('胸の向き', { i: hw, ref: a, seg: [SHL] });
+    vz('腰の開き', { i: im, ref: a, seg: [HIPL] });
+    vz('体重移動', { i: im, ref: a, mark: [hipM], vline: hipM(a) });
+    vz('ビハインド', { i: im, ref: a, mark: [NOSE], vline: P(a, L.nose) });
+    vz(S.club === 'dr' ? '手元の位置（インパクト）' : 'ハンドファースト', { i: im, ref: a, mark: [hand], vline: hand(a) });
+    vz('チキンウィング', armAng(fo));
+    vz('振り切り', { i: fi, ref: a, seg: [SHL] });
+    vz(`${sd.leadName}足への乗り`, { i: fi, mark: [hipM], vline: P(fi, sd.leadAn) });
+    vz('かかとの上がり', { i: fi, seg: [[J(sd.trailHeel), J(sd.trailToe)]], hline: P(fi, sd.trailToe) });
   } else {
     // ===== 後方から =====
     const fdir = Math.sign((P(a, L.lToe).x + P(a, L.rToe).x) - (P(a, L.lHeel).x + P(a, L.rHeel).x))
@@ -791,6 +819,22 @@ function evaluate(saveHist) {
       fix: s12 === 'good' ? '大きく振り抜けています。' : 'インパクトで振りが止まっています。ボールの先までクラブを走らせ、高く振り抜きましょう。',
       drill: 'ボールを打たずに「フィニッシュの形で3秒止まる」素振りを10回。',
     });
+
+    // 後方の解説図（名前が似ているので、長い名前から先に指定する）
+    const spineLn = [hipM, shM];
+    vz('前傾角度のキープ（トップ）', { i: tp, ref: a, seg: [spineLn] });
+    vz('前傾角度のキープ（インパクト）', { i: im, ref: a, seg: [spineLn] });
+    vz('前傾角度', { i: a, seg: [spineLn], vline: hipM(a) });
+    vz('ひざの曲げ', { i: a, ang: [J(sd.trailHip), J(sd.trailKn), J(sd.trailAn)] });
+    vz('手の位置（腕の垂れ方）', { i: a, seg: [[shM, hand]], vline: shM(a) });
+    vz('テークバックの方向', { i: tk, ref: a, mark: [hand], vline: hand(a) });
+    vz('フライングエルボー', { i: tp, seg: [[J(sd.trailSh), J(sd.trailEl)]], hline: P(tp, sd.trailSh) });
+    vz('トップの手の位置', { i: tp, mark: [hand], vline: P(tp, sd.trailSh) });
+    vz('スイング軌道', { i: ds, path: true, mark: [hand], refPt: hand(bi) });
+    vz('頭の前後', { i: im, ref: a, mark: [NOSE], vline: P(a, L.nose) });
+    vz('腰の突っ込み', { i: im, ref: a, mark: [hipM], vline: hipM(a) });
+    vz('頭の高さ', { i: im, ref: a, mark: [NOSE], hline: P(a, L.nose) });
+    vz('高いフィニッシュ', { i: fi, mark: [hand], hline: shM(fi) });
   }
 
   // フィニッシュのバランス（共通）：止まってからの体の揺れ
@@ -810,6 +854,7 @@ function evaluate(saveHist) {
     add('finish', { name: 'フィニッシュのバランス', status: 'na', value: '動画がフィニッシュ直後で終わっているため判定できません', ideal: '振り終わった後も1〜2秒撮影する', about: '', fix: '次回はフィニッシュの後も2秒ほど撮り続けてください。', drill: '' });
   }
 
+  vz('フィニッシュのバランス', { i: end, ref: fi, mark: [hipM, NOSE] });
   S.checks = C;
   const scored = C.filter((c) => c.status !== 'na');
   S.score = calcScore(scored.map((c) => ({ name: c.name, st: c.status })));
@@ -857,7 +902,7 @@ function render(back, down, ratio) {
     return `<div class="phase"><div class="row" style="justify-content:space-between"><h3>${p.name}</h3>
       <button class="btn small" data-jump="${p.key}">▶ この場面を見る</button></div>
       <p class="desc">${p.desc}</p>
-      ${cs.length ? cs.map((c) => `<div class="check"><div class="hd"><b>${esc(c.name)}</b><span class="badge ${c.status}">${BADGE[c.status]}</span></div>
+      ${cs.length ? cs.map((c) => `<div class="check">${c.viz ? `<canvas class="vz" data-ci="${S.checks.indexOf(c)}" title="タップでこの場面へ"></canvas>` : ''}<div class="hd"><b>${esc(c.name)}</b><span class="badge ${c.status}">${BADGE[c.status]}</span></div>
         <div class="val">${esc(c.value)}<br><span>目安：${esc(c.ideal)}</span></div>
         ${c.about ? `<p><span class="lbl">ここを見ています：</span>${esc(c.about)}</p>` : ''}
         <p><span class="lbl">アドバイス：</span>${esc(c.fix)}</p>
@@ -866,6 +911,8 @@ function render(back, down, ratio) {
     </div>`;
   }).join('');
   $$('#phases [data-jump]').forEach((b) => b.addEventListener('click', () => jump(b.dataset.jump, true)));
+  $$('#phases canvas.vz').forEach((cv) => cv.addEventListener('click', () => { const c = S.checks[+cv.dataset.ci]; if (c && c.viz) jumpFrame(c.viz.i); }));
+  queueViz();
   renderPros();
 }
 
@@ -900,6 +947,104 @@ function renderPros() {
 function buildChips() {
   $('#phaseChips').innerHTML = PHASES.map((p) => `<button class="btn small" data-k="${p.key}">${p.name}</button>`).join('');
   $$('#phaseChips button').forEach((b) => b.addEventListener('click', () => jump(b.dataset.k)));
+}
+
+// ---------- 動作ごとの解説図 ----------
+// 動画のコマ移動は同時に1つしかできないので、連続写真づくりと図づくりは順番に行う
+let vizQ = Promise.resolve();
+const serial = (fn) => (vizQ = vizQ.then(fn, fn));
+function queueViz() { const tok = ++S.vizTok; serial(() => buildViz(tok)); }
+
+async function frameImg(i) {
+  if (S.fcache.has(i)) return S.fcache.get(i);
+  await seek(i * S.dt + 0.001);
+  const cv = document.createElement('canvas'); cv.width = S.W; cv.height = S.H;
+  cv.getContext('2d').drawImage(video, 0, 0, S.W, S.H);
+  S.fcache.set(i, cv);
+  return cv;
+}
+
+async function buildViz(tok) {
+  const cvs = $$('#phases canvas.vz');
+  if (!cvs.length) return;
+  const t0 = video.currentTime;
+  let moved = false;
+  for (const cv of cvs) {
+    if (tok !== S.vizTok) return; // 判定し直したので、古い図づくりはやめる
+    const c = S.checks[+cv.dataset.ci];
+    if (!c || !c.viz) continue;
+    if (!S.fcache.has(c.viz.i)) moved = true;
+    const img = await frameImg(c.viz.i);
+    if (tok !== S.vizTok) return;
+    paintViz(cv, c, img);
+  }
+  if (moved && video.paused) { await seek(t0); draw(); }
+}
+
+function paintViz(cv, c, img) {
+  const v = c.viz;
+  // 体の周りだけを切り抜く（基準のコマや手の通り道も入るように）
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  const inc = (p) => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); };
+  const KEYS = [0, 11, 12, 15, 16, 23, 24, 27, 28, 29, 30, 31, 32];
+  KEYS.forEach((k) => inc(P(v.i, k)));
+  if (v.ref != null) KEYS.forEach((k) => inc(P(v.ref, k)));
+  if (v.path) for (let i = S.ph.start; i <= v.i; i++) inc(hand(i));
+  const pad = 0.1 * Math.max(x1 - x0, y1 - y0);
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(S.W, x1 + pad); y1 = Math.min(S.H, y1 + pad);
+  const bw = Math.max(10, x1 - x0), bh = Math.max(10, y1 - y0);
+  const outW = 320, outH = Math.round(Math.min(560, outW * bh / bw)), k = Math.min(outW / bw, outH / bh);
+  cv.width = outW; cv.height = outH;
+  const cx = cv.getContext('2d');
+  const ox = (outW - bw * k) / 2, oy = (outH - bh * k) / 2;
+  cx.fillStyle = '#000'; cx.fillRect(0, 0, outW, outH);
+  cx.drawImage(img, x0, y0, bw, bh, ox, oy, bw * k, bh * k);
+  cx.fillStyle = 'rgba(0,0,0,0.35)'; cx.fillRect(0, 0, outW, outH); // 線を見やすくするため少し暗く
+  const T = (p) => ({ x: ox + (p.x - x0) * k, y: oy + (p.y - y0) * k });
+  const lw = 3;
+  const line = (p, q, color, dash, w) => {
+    const a = T(p), b = T(q);
+    cx.save(); cx.strokeStyle = color; cx.lineWidth = w || lw; cx.lineCap = 'round';
+    if (dash) cx.setLineDash([7, 5]);
+    cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke(); cx.restore();
+  };
+  const dot = (p, color, r, hollow) => {
+    const a = T(p);
+    cx.save(); cx.beginPath(); cx.arc(a.x, a.y, r || 6, 0, 7);
+    if (hollow) { cx.strokeStyle = color; cx.lineWidth = 2.5; cx.setLineDash([4, 3]); cx.stroke(); } else { cx.fillStyle = color; cx.fill(); cx.strokeStyle = '#000'; cx.lineWidth = 1.5; cx.stroke(); }
+    cx.restore();
+  };
+  const COL = { good: '#3ddc84', warn: '#ffb020', bad: '#ff5a46' }[c.status] || '#fff';
+  const GH = '#ffd23f';
+  // うっすら骨格
+  const f = S.frames[v.i];
+  cx.save(); cx.strokeStyle = 'rgba(255,255,255,0.4)'; cx.lineWidth = 1.5;
+  for (const [p, q] of BONES) { const a = T({ x: f[p * 3], y: f[p * 3 + 1] }), b = T({ x: f[q * 3], y: f[q * 3 + 1] }); cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke(); }
+  cx.restore();
+  // 基準（黄色の点線）
+  if (v.vline) line({ x: v.vline.x, y: y0 }, { x: v.vline.x, y: y1 }, GH, true, 2.5);
+  if (v.hline) line({ x: x0, y: v.hline.y }, { x: x1, y: v.hline.y }, GH, true, 2.5);
+  if (v.ref != null) {
+    (v.seg || []).forEach(([p, q]) => line(p(v.ref), q(v.ref), GH, true, 2.5));
+    (v.mark || []).forEach((m) => dot(m(v.ref), GH, 7, true));
+  }
+  if (v.path) {
+    const seg = (from, to, color) => { for (let i = from; i < to; i++) line(hand(i), hand(i + 1), color, false, 2.5); };
+    seg(S.ph.start, S.ph.top, '#2f8cff');
+    seg(S.ph.top, v.i, '#ff5a36');
+  }
+  if (v.refPt) dot(v.refPt, GH, 7, true);
+  // 今回の位置（判定の色）
+  (v.seg || []).forEach(([p, q]) => line(p(v.i), q(v.i), COL, false, 4));
+  if (v.ang) { const [p, q, r] = v.ang.map((fn) => fn(v.i)); line(p, q, COL, false, 4); line(q, r, COL, false, 4); dot(q, COL, 6); }
+  (v.mark || []).forEach((m) => dot(m(v.i), COL, 7));
+}
+
+async function jumpFrame(i) {
+  video.pause(); setPlayLabel();
+  await seek(i * S.dt + 0.001);
+  draw();
+  $('#stageCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function jump(key, scroll) {
