@@ -1937,7 +1937,7 @@ $('#syncLogin').addEventListener('click', async () => {
 });
 $('#syncLogout').addEventListener('click', async () => { await SYNC.remote.logout(); });
 
-const APP_VER = '2026-11-13c';
+const APP_VER = '2026-11-13d';
 $('#appVer').textContent = `バージョン ${APP_VER}（複数の動画・正面＋後方のまとめ解析に対応）`;
 migrateScores();
 applyProfile();
