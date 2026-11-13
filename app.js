@@ -201,10 +201,17 @@ async function loadVideo(url) {
     video.src = url;
     video.muted = true; video.playsInline = true;
     await new Promise((res, rej) => {
-      video.onloadeddata = () => { video.dataset.loaded = url; res(); };
-      video.onerror = () => rej(new Error('この動画形式は読み込めませんでした'));
+      let done = false;
+      const ok = () => { if (done) return; done = true; video.dataset.loaded = url; res(); };
+      video.onloadeddata = ok;
+      video.oncanplay = ok;
+      video.onerror = () => { if (!done) { done = true; rej(new Error('この動画形式は読み込めませんでした')); } };
       video.load();
+      // iPhoneのSafariは、再生操作をしないと動画の中身を読み込まないことがある
+      const p = video.play(); if (p && p.then) p.then(() => video.pause()).catch(() => {});
+      setTimeout(() => { if (done) return; if (video.readyState >= 1) ok(); else { done = true; rej(new Error('動画の読み込みに時間がかかりすぎました')); } }, 10000);
     });
+    video.pause();
   }
   S.vw = video.videoWidth; S.vh = video.videoHeight;
   const ar = S.vw / S.vh;
@@ -226,7 +233,7 @@ $('#file').addEventListener('change', async (e) => {
   if (S.singleUrl) URL.revokeObjectURL(S.singleUrl);
   S.clips = fl.length > 1 ? fl.map((x) => ({ fileName: x.name, url: URL.createObjectURL(x) })) : null;
   S.singleUrl = S.clips ? null : URL.createObjectURL(f);
-  S.multi = null; S.multiSkipped = [];
+  S.multi = null; S.multiSkipped = []; S.multiNotice = '';
   S.analyzed = false; S.posed = false; S.fileName = f.name; S.entry = null; S.entryMix = null; S.fcache = new Map();
   $('#analyzeBtn').textContent = S.clips ? `② ${fl.length}本まとめて解析する` : '② この動画を解析する';
   $('#clipBox').classList.add('hidden');
@@ -285,7 +292,8 @@ async function analyze() {
     paintView2(S.view);
     S.analyzed = true;
     S.entry = null; S.entryMix = null; // 今のプレーヤーの新しい記録として保存する
-    msg('解析完了！'); bar(1);
+    $('#multiNote').textContent = S.multiNotice || ''; $('#multiNote').classList.toggle('hidden', !S.multiNotice);
+    msg(S.multiNotice || (S.multi ? `解析完了！（${S.multi.clips.length}本まとめ）` : '解析完了！'), !!S.multiNotice); bar(1);
     $('#analyzeBox').classList.add('hidden');
     $('#playerBox').classList.remove('hidden');
     $('#results').classList.remove('hidden');
@@ -339,6 +347,9 @@ async function analyzeMulti() {
   }
   S.clipLabel = '';
   const ok = clips.filter((c) => c.frames);
+  S.multiNotice = ok.length < clips.length
+    ? `⚠️ ${clips.length}本中${ok.length}本だけを解析しました。読み取れなかった動画：${clips.filter((c) => !c.frames).map((c) => `${c.fileName}（${c.err}）`).join('、')}`
+    : '';
   if (!ok.length) throw new Error('どの動画からもスイングを見つけられませんでした。' + (clips[0].err || ''));
   // 撮影角度：自動判定なら動画ごとの判定を使い、正面と後方が混ざっていれば両方まとめて判定する。
   // 角度を指定した場合は、全部その角度として判定する
@@ -347,7 +358,7 @@ async function analyzeMulti() {
   const nFo = ok.filter((c) => c.view === 'fo').length;
   S.view = nFo * 2 >= ok.length ? 'fo' : 'dtl';
   const use = ok;
-  S.multiSkipped = clips.filter((c) => !use.includes(c)).map((c) => `${c.fileName}（スイングを見つけられませんでした）`);
+  S.multiSkipped = clips.filter((c) => !use.includes(c)).map((c) => `${c.fileName}（${c.err || 'スイングを見つけられませんでした'}）`);
   if (use.length > 1) {
     S.multi = { clips: use, cur: null, mixed };
     // 代表の動画＝点数が真ん中の動画（極端に良い・悪い1本に引っ張られないように）。正面と後方が混ざる時は、多い方の角度から選ぶ
@@ -1163,8 +1174,10 @@ function queueViz() { const tok = ++S.vizTok; serial(() => buildViz(tok)); }
 async function frameImg(i) {
   if (S.fcache.has(i)) return S.fcache.get(i);
   await seek(i * S.dt + 0.001);
-  const cv = document.createElement('canvas'); cv.width = S.W; cv.height = S.H;
-  cv.getContext('2d').drawImage(video, 0, 0, S.W, S.H);
+  const sc = Math.min(1, 420 / Math.max(S.W, S.H));
+  const cv = document.createElement('canvas'); cv.width = Math.round(S.W * sc); cv.height = Math.round(S.H * sc);
+  cv.getContext('2d').drawImage(video, 0, 0, cv.width, cv.height);
+  cv.__s = cv.width / S.W; // 骨格の座標からこの画像の座標への倍率
   S.fcache.set(i, cv);
   return cv;
 }
@@ -1208,7 +1221,8 @@ function paintViz(cv, c, img) {
   const cx = cv.getContext('2d');
   const ox = (outW - bw * k) / 2, oy = (outH - bh * k) / 2;
   cx.fillStyle = '#000'; cx.fillRect(0, 0, outW, outH);
-  cx.drawImage(img, x0, y0, bw, bh, ox, oy, bw * k, bh * k);
+  const is = img.__s || 1;
+  cx.drawImage(img, x0 * is, y0 * is, bw * is, bh * is, ox, oy, bw * k, bh * k);
   cx.fillStyle = 'rgba(0,0,0,0.35)'; cx.fillRect(0, 0, outW, outH); // 線を見やすくするため少し暗く
   const T = (p) => ({ x: ox + (p.x - x0) * k, y: oy + (p.y - y0) * k });
   const lw = 3;
@@ -1764,6 +1778,8 @@ function migrateScores() {
     if (changed) setHist(p.id, h);
   }
 }
+const APP_VER = '2026-11-13b';
+$('#appVer').textContent = `バージョン ${APP_VER}（複数の動画・正面＋後方のまとめ解析に対応）`;
 migrateScores();
 applyProfile();
 renderGrowth();
