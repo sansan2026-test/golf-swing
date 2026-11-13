@@ -86,6 +86,18 @@ details{margin-top:8px}
 .check::after{content:"";display:block;clear:both}
 .check .vz{float:right;width:42%;max-width:210px;margin:2px 0 6px 10px;border-radius:8px;background:#000;cursor:pointer}
 .check .vzcap{margin:6px 0;font-size:13px;line-height:1.6;background:var(--bg);border-radius:6px;padding:6px 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer}
+.chips button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.ic{border-top:1px solid var(--line);padding:10px 0}.ic:first-child{border-top:0;padding-top:0}
+.ic-h{margin:0 0 6px;font-size:16px}
+.ic-top{background:rgba(224,68,47,.08);border:1px solid rgba(224,68,47,.35);border-radius:10px;padding:10px}
+.ic-list{margin:0;padding-left:1.4em}.ic-list li{margin:6px 0}
+.linkbtn{appearance:none;background:none;border:0;padding:0;color:var(--brand);text-decoration:underline;font:inherit;cursor:pointer}
+.cause-tag{display:inline-block;margin:2px 6px 2px 0;font-size:12px;padding:1px 8px;border-radius:999px;background:rgba(224,68,47,.12);color:#c0392b}
+.cause-line{margin:6px 0;padding:6px 8px;border-radius:6px;background:rgba(224,68,47,.08);font-size:13px;line-height:1.6}
+.check.is-cause{border-left:4px solid #e0442f;padding-left:8px}
+.check.flash{outline:3px solid #ffb020;outline-offset:2px;transition:outline-color .3s}
 .tr-card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0 12px}
 .tr-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
 .tr-title{font-weight:600;margin:0;font-size:16px}
@@ -142,6 +154,12 @@ details{margin-top:8px}
       </div>
     </div>
     <p class="note" id="playerInfo" style="margin:6px 0 0"></p>
+    <div class="field" style="margin-top:10px">
+      <label class="t">🎯 今の悩み（複数選べます。解析した時に、その原因になっている動作を示します）</label>
+      <div class="chips" id="issueChips"></div>
+      <input type="text" id="issueText" class="txt" maxlength="200" placeholder="その他の悩みを自由に（例：右に曲がる、ボールの頭をたたいてしまう）" style="margin-top:8px">
+      <p class="note" id="issueTextNote" style="margin:4px 0 0"></p>
+    </div>
     <div id="playerForm" class="hidden">
       <div class="field"><label class="t">名前（例：わたし、妻）</label><input type="text" id="pfName" maxlength="12" class="txt"></div>
       <div class="row">
@@ -276,6 +294,11 @@ details{margin-top:8px}
       </div>
     </section>
 
+    <section class="card" id="issueCard">
+      <h2>🩺 あなたの悩みの原因</h2>
+      <div id="issueCauses"></div>
+    </section>
+
     <section class="card">
       <h2>🎯 今週の練習テーマ</h2>
       <p class="note">球筋への影響が大きい課題ほど上に並べています（同じくらいなら、前の動作の乱れは後に連鎖するので早い動作を優先）。「直すと＋○点」はその項目が「良い」になった時の点数の伸びです。まずは1番目だけに集中するのがおすすめです。</p>
@@ -382,7 +405,7 @@ details{margin-top:8px}
   </section>
 </main>
 <p class="note" id="appVer" style="text-align:center;margin:16px 0">バージョン：確認中（この表示のままなら、古いプログラムが残っています。ページを再読み込みしてください）</p>
-<script src="firebase-config.js?v=20261113e"></script>
-<script type="module" src="app.js?v=20261113e"></script>
+<script src="firebase-config.js?v=20261114a"></script>
+<script type="module" src="app.js?v=20261114a"></script>
 </body>
 </html>
