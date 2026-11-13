@@ -601,6 +601,105 @@ function detectView() {
   return w / torso > 0.6 ? 'fo' : 'dtl'; // 正面なら肩幅＋腰幅が胴の長さ並みに見える
 }
 
+// ---------- 悩み（球筋のミス）と、その原因になりやすい動き ----------
+// causes: [判定項目の名前（| で別名）, 原因になる理由, その判定の値がこの悩みにつながる向きの時だけ（正規表現・省略可）]
+// 並び順＝原因としての大きさの目安。フェースの向きやグリップなどクラブの状態はアプリでは見られない。
+const BACK_ONLY = ['スイング軌道', '腰の突っ込み', '前傾角度', '頭の高さ', '頭の前後', '手の位置（腕の垂れ方）', 'テークバックの方向', 'フライングエルボー', 'ひざの曲げ', 'トップの手の位置', '高いフィニッシュ'];
+const ISSUES = [
+  { key: 'slice', name: 'スライスする（右に曲がる）', kw: /スライス|右に曲が|右へ曲が|右に行|右へ行|プッシュ/, causes: [
+    ['スイング軌道', 'クラブが外から下りて、ボールに右回転がかかります。スライスの一番の原因です', /アウトサイドイン/],
+    ['胸の向き', '振り下ろしで胸が早く目標を向くと、クラブが外から下りてきます'],
+    ['下半身リード', '上半身から切り返すと、腕とクラブが外へ放り出されます'],
+    ['肩の回転（推定）', '肩の回転が浅いと、腕だけで振り下ろして外から入りやすくなります'],
+    ['体重移動', '体重が後ろ足に残ると、体が回り切らずフェースが開いたまま当たります', /残っている/],
+    ['チキンウィング', 'ひじが引けると、フェースが開いたままインパクトします'],
+    ['腰の突っ込み', '腰がボール側に出ると手元の通り道がなくなり、外から振るしかなくなります'],
+    ['捻転差', '肩と腰のねじれが小さいと、切り返しで上半身が先に回りやすくなります'],
+  ] },
+  { key: 'hook', name: 'フック・ひっかけ（左に曲がる）', kw: /フック|ひっか|引っか|左に曲が|左へ曲が|左に行|左へ行/, causes: [
+    ['スイング軌道', '振り下ろしが内側から入りすぎると、ボールに左回転がかかります', /インサイドアウト/],
+    ['下半身リード', '腰の回転が止まると、腕と手首だけが返ってひっかけます'],
+    ['腰の開き', 'インパクトで腰の回転が止まると、手が返って左へ飛びます'],
+    ['体重移動', '体重が後ろ足に残ると、手首が返って左へ引っかけやすくなります', /残っている/],
+    ['スウェー', 'トップで腰が後ろへずれると、戻りきれずに手首を返して合わせやすくなります'],
+  ] },
+  { key: 'top', name: 'トップする（ボールの頭をたたく）', kw: /トップ|頭をたた|頭を叩|チョロ/, causes: [
+    ['前傾角度のキープ（インパクト）', '上体が起き上がると、クラブの一番低い所が上がってボールの頭に当たります'],
+    ['頭の高さ', '頭が上がると、体と一緒にクラブも浮き上がります'],
+    ['腰の突っ込み', '腰がボール側に出ると上体が起き、クラブが浮きます'],
+    ['頭の前後', '上体がのけぞると、クラブが届かずボールの上をたたきます', /引けている/],
+    ['三角形', '腕が縮むと、クラブがボールまで届きません'],
+    ['チキンウィング', 'ひじが引けると、クラブが上へ逃げてボールの上側に当たります'],
+    ['前傾角度のキープ（トップ）', 'トップで上体が起きると、振り下ろしで高さを合わせきれません'],
+  ] },
+  { key: 'duff', name: 'ダフる（手前の地面をたたく）', kw: /ダフ|手前/, causes: [
+    ['体重移動', '体重が後ろ足に残ると、クラブの一番低い所がボールより手前になります', /残っている/],
+    ['ハンドファースト|手元の位置（インパクト）', '手首がほどけて手元が遅れると、ヘッドが先に地面に落ちます'],
+    ['下半身リード', '腰が先に目標方向へ動かないと、体重が後ろに残ります'],
+    ['スウェー', '腰が後ろへずれると、体の中心が後ろに残って手前をたたきます'],
+    ['頭の高さ', '頭が沈むと、体と一緒にクラブも下がって手前に落ちます', /下が/],
+  ] },
+  { key: 'shank', name: 'シャンクする（真横に飛ぶ）', kw: /シャンク/, causes: [
+    ['腰の突っ込み', '腰がボール側に出ると、手元も前に出てクラブの根元に当たります'],
+    ['頭の前後', '頭がボール側へ出ると、クラブの通り道もボール側へずれます', /ボール側/],
+    ['前傾角度のキープ（インパクト）', '前傾が崩れると手元の位置がずれて、根元に当たりやすくなります'],
+    ['スイング軌道', '外から下りると、クラブの根元からボールに入りやすくなります', /アウトサイドイン/],
+    ['手の位置（腕の垂れ方）', 'ボールから遠すぎる構えは、振り下ろしで手元が前に出やすくなります', /ボール側/],
+  ] },
+  { key: 'dist', name: '飛距離が出ない', kw: /飛ば|飛距離|距離が出/, causes: [
+    ['肩の回転（推定）', '肩の回転が浅いと、スイングが小さくなり力をためられません'],
+    ['捻転差', '肩と腰の回転の差（ねじれ）が、飛ばすための「ため」になります'],
+    ['体重移動', '体重が目標側に移らないと、体の力がボールに伝わりません'],
+    ['腰の開き', '腰が回らない手打ちでは、ヘッドスピードが上がりません'],
+    ['テンポ', 'リズムが崩れると、力を一気に出せません'],
+    ['トップでの', 'トップで腕が縮むと、スイングの円が小さくなります'],
+    ['振り切り', '振り切れずに止まるのは、インパクトで減速しているサインです'],
+  ] },
+  { key: 'dir', name: '方向が安定しない（左右に散る）', kw: /安定|散ら|ばらつ|方向/, causes: [
+    ['テンポ', 'リズムが毎回違うと、当たり方も毎回変わります'],
+    ['頭の横ブレ', '頭（体の軸）が動くと、毎回同じ所に戻せません'],
+    ['スウェー', '腰が左右にずれると、インパクトの位置が毎回ずれます'],
+    ['前傾角度のキープ（インパクト）', '前傾が崩れると、クラブの通り道が毎回変わります'],
+    ['スイング軌道', '軌道がずれると、そのぶん球筋が曲がります'],
+    ['フィニッシュのバランス', 'フィニッシュでふらつくのは、スイング中に軸がぶれているサインです'],
+  ] },
+  { key: 'tempura', name: 'テンプラ（ドライバーで真上に上がる）', kw: /テンプラ|天ぷら|てんぷら/, causes: [
+    ['スイング軌道', '外から鋭い角度で下りると、ヘッドがボールの下に潜ります', /アウトサイドイン/],
+    ['ビハインド', '頭が目標側へ突っ込むと、上から打ち込んでしまいます', /突っ込/],
+    ['肩の傾き', '構えで肩が水平に近いと、上から打ち込みやすくなります'],
+    ['体重移動', '体が目標側へ突っ込みすぎると、上から打ち込みます'],
+  ] },
+];
+const issueByKey = (k) => ISSUES.find((x) => x.key === k);
+// 選んだ悩み＋自由に書いた文から、対象の悩みを決める
+function activeIssues(p) {
+  const keys = new Set((p && p.issues) || []);
+  const text = (p && p.issueText) || '';
+  const fromText = new Set();
+  for (const it of ISSUES) if (text && it.kw.test(text) && !keys.has(it.key)) { keys.add(it.key); fromText.add(it.key); }
+  return ISSUES.filter((it) => keys.has(it.key)).map((it) => ({ ...it, fromText: fromText.has(it.key) }));
+}
+const matchCause = (c, nm) => nm.split('|').some((n) => c.name.includes(n));
+// 判定の結果から、悩みごとの原因を調べる
+function issueCauses(checks, issues) {
+  return issues.map((it) => {
+    const found = [], fine = [], missing = [];
+    it.causes.forEach(([nm, why, when], order) => {
+      const c = checks.find((x) => x.status !== 'na' && matchCause(x, nm));
+      if (!c) { missing.push(nm); return; }
+      if (c.status !== 'good' && (!when || when.test(c.value || ''))) found.push({ c, why, order });
+      else fine.push(c);
+    });
+    found.sort((x, y) => PT[x.c.status] - PT[y.c.status] || x.order - y.order);
+    const otherView = missing.some((nm) => BACK_ONLY.some((b) => nm.includes(b))) ? '後方' : missing.length ? '正面' : '';
+    return { it, found, fine, otherView };
+  });
+}
+// その項目が、選んだ悩みの原因になっているか（解説・練習テーマの印に使う）
+function causeTags(c, ic) {
+  return ic.filter((r) => r.found.some((f) => f.c === c || (f.c.name === c.name && f.c.phase === c.phase))).map((r) => ({ name: r.it.name, why: r.found.find((f) => f.c.name === c.name).why, top: r.found[0].c.name === c.name }));
+}
+
 // ---------- 判定 ----------
 // 採点：良い100・注意50・要改善0 を、項目の重み（球筋への影響の大きさ）で平均する
 const PT = { good: 100, warn: 50, bad: 0 };
@@ -1103,7 +1202,8 @@ function render(back, down, ratio) {
 
   const order = PHASES.map((p) => p.key);
   // 優先度＝重み×深刻さ（要改善は注意の2倍）。同じなら早い動作から（前の乱れが後に連鎖するため）
-  const prio = (c) => weightOf(c.name) * (c.status === 'bad' ? 2 : 1);
+  const IC = issueCauses(S.checks, activeIssues(curProfile()));
+  const prio = (c) => weightOf(c.name) * (c.status === 'bad' ? 2 : 1) * (causeTags(c, IC).length ? 2 : 1);
   const issues = S.checks.filter((c) => c.status === 'bad' || c.status === 'warn')
     .sort((x, y) => prio(y) - prio(x) || order.indexOf(x.phase) - order.indexOf(y.phase));
   const pName = (k) => PHASES.find((p) => p.key === k).name;
@@ -1111,20 +1211,22 @@ function render(back, down, ratio) {
     const list = S.checks.filter((x) => x.status !== 'na').map((x) => ({ name: x.name, st: x === c ? 'good' : x.status }));
     return calcScore(list) - S.score;
   };
-  const card = (c, i) => `<div class="theme ${c.status}"><b>${i + 1}. 【${pName(c.phase)}】${esc(c.name)}<span class="note" style="font-weight:400">（直すと +${gain(c)}点）</span></b>${esc(c.fix)}<br><span class="note">練習法：${esc(c.drill)}</span>${c.link ? `<br><span class="note">🔗 ${esc(c.link)}</span>` : ''}</div>`;
+  const card = (c, i) => `<div class="theme ${c.status}"><b>${i + 1}. 【${pName(c.phase)}】${esc(c.name)}<span class="note" style="font-weight:400">（直すと +${gain(c)}点）</span></b>${causeTags(c, IC).map((t) => `<span class="cause-tag">🎯 「${esc(t.name.replace(/（.*?）/g, ''))}」の原因</span>`).join('')}${esc(c.fix)}<br><span class="note">練習法：${esc(c.drill)}</span>${c.link ? `<br><span class="note">🔗 ${esc(c.link)}</span>` : ''}</div>`;
   const rest = issues.slice(3);
   $('#themes').innerHTML = issues.length
     ? issues.slice(0, 3).map(card).join('')
       + (rest.length ? `<details><summary>ほかの改善点（${rest.length}件）</summary><p class="note">上の3つが直ってきたら、次はこちらに取り組みましょう（大事な順）。</p>${rest.map((c, i) => card(c, i + 3)).join('')}</details>` : '')
     : '<p>大きな課題は見つかりませんでした。今の動きを再現できるよう、同じ条件で撮影して比べていきましょう。</p>';
 
+  renderIssueCauses(IC);
   $('#phases').innerHTML = PHASES.map((p) => {
     const cs = S.checks.filter((c) => c.phase === p.key);
     return `<div class="phase"><div class="row" style="justify-content:space-between"><h3>${p.name}</h3>
       <button class="btn small" data-jump="${p.key}">▶ この場面を見る</button></div>
       <p class="desc">${p.desc}</p>
-      ${cs.length ? cs.map((c) => `<div class="check">${c.viz ? `<canvas class="vz" data-ci="${S.checks.indexOf(c)}" title="タップでこの場面へ"></canvas>` : ''}<div class="hd"><b>${S.multi && S.multi.mixed && c.multi ? `<span class="note" style="font-weight:400">［${c.multi.views.length > 1 ? '正面・後方' : c.multi.views[0] === 'fo' ? '正面' : '後方'}］</span>` : ''}${esc(c.name)}</b><span class="badge ${c.status}">${BADGE[c.status]}</span></div>${c.link ? `<p class="note" style="margin:2px 0;color:var(--text)">🔗 ${esc(c.link)}</p>` : ''}${c.multi ? `<p class="note" style="margin:2px 0">${c.multi.n}本の内訳：良い ${c.multi.cnt.good}・注意 ${c.multi.cnt.warn}・要改善 ${c.multi.cnt.bad}${c.multi.cnt.bad + c.multi.cnt.warn === c.multi.n && c.multi.n > 1 ? '（毎回出ている課題）' : ''}</p>` : ''}
+      ${cs.length ? cs.map((c) => `<div class="check${causeTags(c, IC).length ? ' is-cause' : ''}" id="chk-${S.checks.indexOf(c)}">${c.viz ? `<canvas class="vz" data-ci="${S.checks.indexOf(c)}" title="タップでこの場面へ"></canvas>` : ''}<div class="hd"><b>${S.multi && S.multi.mixed && c.multi ? `<span class="note" style="font-weight:400">［${c.multi.views.length > 1 ? '正面・後方' : c.multi.views[0] === 'fo' ? '正面' : '後方'}］</span>` : ''}${esc(c.name)}</b><span class="badge ${c.status}">${BADGE[c.status]}</span></div>${c.link ? `<p class="note" style="margin:2px 0;color:var(--text)">🔗 ${esc(c.link)}</p>` : ''}${c.multi ? `<p class="note" style="margin:2px 0">${c.multi.n}本の内訳：良い ${c.multi.cnt.good}・注意 ${c.multi.cnt.warn}・要改善 ${c.multi.cnt.bad}${c.multi.cnt.bad + c.multi.cnt.warn === c.multi.n && c.multi.n > 1 ? '（毎回出ている課題）' : ''}</p>` : ''}
         <div class="val">${esc(c.value)}<br><span>目安：${esc(c.ideal)}</span></div>
+        ${causeTags(c, IC).map((t) => `<p class="cause-line">🎯 <b>この動作が「${esc(t.name.replace(/（.*?）/g, ''))}」の原因${t.top ? 'の可能性が一番高いです' : 'になっている可能性があります'}。</b>${esc(t.why)}。</p>`).join('')}
         ${c.viz && c.viz.cap ? `<p class="vzcap"><b>図の見方：</b>${capHtml(c)}</p>` : ''}
         ${c.about ? `<p><span class="lbl">ここを見ています：</span>${esc(c.about)}</p>` : ''}
         <p><span class="lbl">アドバイス：</span>${esc(c.fix)}</p>
@@ -1317,6 +1419,70 @@ function paintViz(cv, c, img) {
     if (ideal && ideal.down.length) tag(mid(ideal.down), 'お手本', '#fff', -110, 0);
   }
 }
+
+// ---------- 悩みの原因（結果画面） ----------
+function renderIssueCauses(IC) {
+  const box = $('#issueCauses');
+  if (!box) return;
+  const p = curProfile();
+  if (!IC.length) {
+    box.innerHTML = `<p class="note" style="margin:0">「👤 プレーヤー」の所で<b>今の悩み</b>（スライスする、トップするなど）を選ぶと、その原因になっている動作をここに表示します。</p>
+      ${p.issueText ? `<p class="note">メモ：「${esc(p.issueText)}」（選択肢にない悩みは、自動の原因分析の対象外です）</p>` : ''}
+      <button class="btn small" id="goIssues">悩みを選ぶ</button>`;
+    $('#goIssues').addEventListener('click', () => $('#playerCard').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    return;
+  }
+  const short = (n) => n.replace(/（.*?）/g, '');
+  box.innerHTML = IC.map((r) => {
+    const head = `<h3 class="ic-h">「${esc(r.it.name)}」${r.it.fromText ? '<span class="note" style="font-weight:400">（メモから判断）</span>' : ''}</h3>`;
+    if (!r.found.length) {
+      return `<div class="ic">${head}<p style="margin:4px 0">今回の動画では、この悩みの原因になりやすい体の動きに大きな問題は見つかりませんでした${r.fine.length ? `（${r.fine.map((c) => esc(short(c.name))).join('・')}は良い判定）` : ''}。</p>
+        <p class="note" style="margin:0">体の動きに問題が少ない場合、フェースの向きやグリップ、ボールの位置など、このアプリでは見られない所が原因かもしれません。${r.otherView ? `${r.otherView}からも撮ると、さらに原因を調べられます。` : ''}</p></div>`;
+    }
+    const [top, ...rest] = r.found;
+    const item = (f, i) => `<li><button class="linkbtn" data-chk="${S.checks.indexOf(f.c)}">${esc(f.c.name)}</button> <span class="badge ${f.c.status}">${BADGE[f.c.status]}</span><br><span class="note">${esc(f.why)}。今回：${esc(f.c.value)}</span></li>`;
+    return `<div class="ic">${head}
+      <div class="ic-top"><b>🎯 一番の原因の可能性：${esc(top.c.name)}</b> <span class="badge ${top.c.status}">${BADGE[top.c.status]}</span>
+        <p style="margin:4px 0">${esc(top.why)}。</p>
+        <p class="note" style="margin:0">今回：${esc(top.c.value)}　／　直し方：${esc(top.c.fix)}</p>
+        <button class="btn small" data-chk="${S.checks.indexOf(top.c)}" style="margin-top:6px">図と解説を見る</button></div>
+      ${rest.length ? `<p style="margin:8px 0 2px"><b>ほかに考えられる原因</b></p><ol class="ic-list" start="2">${rest.map(item).join('')}</ol>` : ''}
+      ${r.fine.length ? `<p class="note" style="margin:6px 0 0">問題なし：${r.fine.map((c) => esc(short(c.name))).join('・')}</p>` : ''}
+      ${r.otherView ? `<p class="note" style="margin:4px 0 0">${r.otherView}からも撮ると、ほかの原因もチェックできます。</p>` : ''}
+    </div>`;
+  }).join('') + '<p class="note" style="margin:8px 0 0">※体の動きから考えられる原因です。フェースの向きやグリップなど、クラブの状態はこのアプリでは見られません。</p>';
+  $$('#issueCauses [data-chk]').forEach((b) => b.addEventListener('click', () => {
+    const el = $('#chk-' + b.dataset.chk);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
+  }));
+}
+
+// ---------- 今の悩みを選ぶ（プレーヤーごとに保存。同期もされる） ----------
+function renderIssuePicker() {
+  const p = curProfile(), sel = new Set(p.issues || []);
+  $('#issueChips').innerHTML = ISSUES.map((it) => `<button data-k="${it.key}" class="${sel.has(it.key) ? 'on' : ''}">${esc(it.name)}</button>`).join('');
+  $$('#issueChips button').forEach((b) => b.addEventListener('click', () => {
+    const ps = profiles(), me = ps.find((x) => x.id === curProfile().id);
+    const cur = new Set(me.issues || []);
+    if (cur.has(b.dataset.k)) cur.delete(b.dataset.k); else cur.add(b.dataset.k);
+    me.issues = ISSUES.map((x) => x.key).filter((k) => cur.has(k));
+    saveProfiles(ps); renderIssuePicker(); issuesChanged();
+  }));
+  const t = $('#issueText');
+  if (document.activeElement !== t) t.value = p.issueText || '';
+  const ai = activeIssues(p).filter((x) => x.fromText);
+  $('#issueTextNote').textContent = ai.length ? `メモから「${ai.map((x) => x.name.replace(/（.*?）/g, '')).join('」「')}」として原因を調べます。` : '';
+}
+let issueTimer = 0;
+$('#issueText').addEventListener('input', () => {
+  clearTimeout(issueTimer);
+  issueTimer = setTimeout(() => {
+    const ps = profiles(), me = ps.find((x) => x.id === curProfile().id);
+    me.issueText = $('#issueText').value.trim().slice(0, 200);
+    saveProfiles(ps); renderIssuePicker(); issuesChanged();
+  }, 600);
+});
+function issuesChanged() { if (S.analyzed) evaluate(); }
 
 // コマの番号から、その場面の名前（図の名札用）
 function phaseAt(i) {
@@ -1556,6 +1722,7 @@ function applyProfile() {
   S.hand = p.hand; S.heightCm = p.height;
   $('#playerSel').innerHTML = profiles().map((x) => `<option value="${x.id}"${x.id === p.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
   $('#playerInfo').textContent = `${p.hand === 'R' ? '右打ち' : '左打ち'}・身長${p.height}cm・記録${hist(p.id).length}件`;
+  renderIssuePicker();
 }
 
 // プレーヤーを切り替える。前のプレーヤーの記録は動かさず、表示中の結果は閉じる
@@ -1641,7 +1808,7 @@ function recordEntry(back, down, ratio, o = {}) {
   const getE = () => (o.slot ? S.entryMix[o.slot] : S.entry);
   const setE = (e) => { if (o.slot) S.entryMix[o.slot] = e; else S.entry = e; };
   const checks = (o.checks || S.checks).filter((c) => c.status !== 'na').map((c) => ({ k: c.phase + '|' + c.name, phase: c.phase, name: c.name, st: c.status, v: c.value }));
-  const data = { file: clipsSrc ? clipsSrc.map((c) => c.fileName).join('、') : S.fileName, n: clipsSrc ? clipsSrc.length : 1, view, club: S.club, score, sv: SCORE_VER, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
+  const data = { issues: activeIssues(curProfile()).map((x) => x.key), file: clipsSrc ? clipsSrc.map((c) => c.fileName).join('、') : S.fileName, n: clipsSrc ? clipsSrc.length : 1, view, club: S.club, score, sv: SCORE_VER, tempo: +ratio.toFixed(1), back: +back.toFixed(2), down: +down.toFixed(2), checks };
   let txt = '';
   const e = getE();
   if (!(e && e.discarded)) {
@@ -2078,7 +2245,7 @@ $('#syncLogin').addEventListener('click', async () => {
 });
 $('#syncLogout').addEventListener('click', async () => { await SYNC.remote.logout(); });
 
-const APP_VER = '2026-11-13e';
+const APP_VER = '2026-11-14a';
 $('#appVer').textContent = `バージョン ${APP_VER}（複数の動画・正面＋後方のまとめ解析に対応）`;
 migrateScores();
 applyProfile();
