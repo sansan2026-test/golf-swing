@@ -84,7 +84,28 @@ details{margin-top:8px}
 .check .val span{color:var(--sub)}
 .check p{margin:4px 0;font-size:14px}
 .check::after{content:"";display:block;clear:both}
-.check .vz{float:right;width:38%;max-width:170px;margin:2px 0 6px 10px;border-radius:8px;background:#000;cursor:pointer}
+.check .vz{float:right;width:42%;max-width:210px;margin:2px 0 6px 10px;border-radius:8px;background:#000;cursor:pointer}
+.check .vzcap{margin:6px 0;font-size:13px;line-height:1.6;background:var(--bg);border-radius:6px;padding:6px 8px}
+.tr-card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0 12px}
+.tr-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.tr-title{font-weight:600;margin:0;font-size:16px}
+.tr-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.tr-stats div{background:var(--bg);border-radius:8px;padding:8px}
+.tr-stats span{display:block;font-size:12px;color:var(--sub)}
+.tr-stats b{font-size:19px}
+.tr-stats small{font-size:13px}.tr-stats .up{color:#1f9d57}.tr-stats .down{color:#e0442f}
+.tr-focus{margin-top:10px;background:rgba(47,140,255,.1);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:14px;line-height:1.6}
+.tr-sec{margin-top:12px}
+.tr-h{font-weight:600;font-size:14px;margin:0 0 4px}
+.tr-h.bad{color:#e0442f}.tr-h.good{color:#1f9d57}.tr-h.warn{color:#d48806}
+.tr-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.tr-sub{grid-column:1/-1;font-size:12px;color:var(--sub);line-height:1.5}
+.tr-dots{display:flex;gap:3px;align-items:center}
+.tr-d{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:-1px}
+.tr-d.good{background:#3ddc84}.tr-d.warn{background:#ffb020}.tr-d.bad{background:#ff5a46}
+.tr-pills{display:flex;flex-wrap:wrap;gap:6px}
+.tr-pills span{font-size:12px;padding:2px 8px;border-radius:8px;background:rgba(61,220,132,.18);color:var(--ink)}
+.tr-legend{margin:10px 0 0;font-size:12px}
 .vzlegend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin:0 0 6px}
 .vzlegend i{display:inline-block;width:16px;height:4px;border-radius:2px;vertical-align:middle;margin-right:4px}
 .check .lbl{font-weight:700;font-size:13px}
@@ -295,6 +316,7 @@ details{margin-top:8px}
       <div class="seg" id="segGView"><button data-v="fo">正面</button><button data-v="dtl">後方</button></div>
       <div class="seg" id="segGClub"></div>
     </div>
+    <div id="traits"></div>
     <div id="growth"></div>
     <details>
       <summary>記録の一覧</summary>
@@ -360,7 +382,7 @@ details{margin-top:8px}
   </section>
 </main>
 <p class="note" id="appVer" style="text-align:center;margin:16px 0">バージョン：確認中（この表示のままなら、古いプログラムが残っています。ページを再読み込みしてください）</p>
-<script src="firebase-config.js?v=20261113d"></script>
-<script type="module" src="app.js?v=20261113d"></script>
+<script src="firebase-config.js?v=20261113e"></script>
+<script type="module" src="app.js?v=20261113e"></script>
 </body>
 </html>
